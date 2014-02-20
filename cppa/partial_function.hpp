@@ -37,10 +37,12 @@
 #include <utility>
 #include <type_traits>
 
+#include "cppa/on.hpp"
 #include "cppa/behavior.hpp"
 #include "cppa/any_tuple.hpp"
 #include "cppa/ref_counted.hpp"
 #include "cppa/intrusive_ptr.hpp"
+#include "cppa/may_have_timeout.hpp"
 #include "cppa/timeout_definition.hpp"
 
 #include "cppa/util/duration.hpp"
@@ -69,8 +71,6 @@ class partial_function {
 
     partial_function(impl_ptr ptr);
 
-    static constexpr bool may_have_timeout = false;
-
     /** @endcond */
 
     partial_function() = default;
@@ -79,11 +79,8 @@ class partial_function {
     partial_function& operator=(partial_function&&) = default;
     partial_function& operator=(const partial_function&) = default;
 
-    template<typename... Cs>
-    partial_function(const match_expr<Cs...>& arg);
-
-    template<typename... Cs, typename T, typename... Ts>
-    partial_function(const match_expr<Cs...>& arg0, const T& arg1, const Ts&... args);
+    template<typename T, typename... Ts>
+    partial_function(const T& arg, Ts&&... args);
 
     /**
      * @brief Returns @p true if this partial function is defined for the
@@ -107,7 +104,9 @@ class partial_function {
      */
     template<typename... Ts>
     typename std::conditional<
-        util::disjunction<util::rm_const_and_ref<Ts>::type::may_have_timeout...>::value,
+        util::disjunction<
+            may_have_timeout<typename util::rm_const_and_ref<Ts>::type>::value...
+        >::value,
         behavior,
         partial_function
     >::type
@@ -118,26 +117,6 @@ class partial_function {
     impl_ptr m_impl;
 
 };
-
-template<typename T>
-typename std::conditional<T::may_have_timeout, behavior, partial_function>::type
-match_expr_convert(const T& arg) {
-    return {arg};
-}
-
-template<typename T0, typename T1, typename... Ts>
-typename std::conditional<
-    util::disjunction<
-        T0::may_have_timeout,
-        T1::may_have_timeout,
-        Ts::may_have_timeout...
-    >::value,
-    behavior,
-    partial_function
->::type
-match_expr_convert(const T0& arg0, const T1& arg1, const Ts&... args) {
-    return detail::match_expr_concat(arg0, arg1, args...);
-}
 
 template<typename... Cases>
 partial_function operator,(const match_expr<Cases...>& mexpr,
@@ -155,13 +134,11 @@ partial_function operator,(const partial_function& pfun,
  *             inline and template member function implementations            *
  ******************************************************************************/
 
-template<typename... Cs>
-partial_function::partial_function(const match_expr<Cs...>& arg)
-: m_impl(arg.as_behavior_impl()) { }
-
-template<typename... Cs, typename T, typename... Ts>
-partial_function::partial_function(const match_expr<Cs...>& arg0, const T& arg1, const Ts&... args)
-: m_impl(detail::match_expr_concat(arg0, arg1, args...)) { }
+template<typename T, typename... Ts>
+partial_function::partial_function(const T& arg, Ts&&... args)
+: m_impl(detail::match_expr_concat(
+             detail::lift_to_match_expr(arg),
+             detail::lift_to_match_expr(std::forward<Ts>(args))...)) { }
 
 inline bool partial_function::defined_at(const any_tuple& value) {
     return (m_impl) && m_impl->defined_at(value);
@@ -174,12 +151,16 @@ inline optional<any_tuple> partial_function::operator()(T&& arg) {
 
 template<typename... Ts>
 typename std::conditional<
-    util::disjunction<util::rm_const_and_ref<Ts>::type::may_have_timeout...>::value,
+    util::disjunction<
+        may_have_timeout<typename util::rm_const_and_ref<Ts>::type>::value...
+    >::value,
     behavior,
     partial_function
 >::type
 partial_function::or_else(Ts&&... args) const {
-    auto tmp = match_expr_convert(std::forward<Ts>(args)...);
+    // using a behavior is safe here, because we "cast"
+    // it back to a partial_function when appropriate
+    behavior tmp{std::forward<Ts>(args)...};
     return m_impl->or_else(tmp.as_behavior_impl());
 }
 

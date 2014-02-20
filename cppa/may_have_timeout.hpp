@@ -28,32 +28,31 @@
 \******************************************************************************/
 
 
-#ifndef CPPA_RESUMABLE_HPP
-#define CPPA_RESUMABLE_HPP
+#ifndef MAY_HAVE_TIMEOUT_HPP
+#define MAY_HAVE_TIMEOUT_HPP
 
 namespace cppa {
 
-namespace util {
-struct fiber;
-} // namespace util
+template<typename F>
+struct timeout_definition;
 
-struct resumable {
+class behavior;
 
-    enum resume_result {
-        resume_later,
-        done
-    };
+template<typename T>
+struct may_have_timeout {
+    static constexpr bool value = false;
+};
 
-    // intrusive next pointer needed to use
-    // 'resumable' with 'single_reader_queue'
-    resumable* next;
+template<>
+struct may_have_timeout<behavior> {
+    static constexpr bool value = true;
+};
 
-    virtual ~resumable();
-
-    virtual resume_result resume(util::fiber*) = 0;
-
+template<typename F>
+struct may_have_timeout<timeout_definition<F>> {
+    static constexpr bool value = true;
 };
 
 } // namespace cppa
 
-#endif // CPPA_RESUMABLE_HPP
+#endif // MAY_HAVE_TIMEOUT_HPP

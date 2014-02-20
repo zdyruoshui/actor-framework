@@ -28,26 +28,34 @@
 \******************************************************************************/
 
 
-#ifndef CPPA_MATCH_HINT_HPP
-#define CPPA_MATCH_HINT_HPP
-
-#include <iosfwd>
+#ifndef CPPA_RESUMABLE_HPP
+#define CPPA_RESUMABLE_HPP
 
 namespace cppa {
+namespace detail {
 
-/**
- * @brief Optional return type for functors used in pattern matching
- *        expressions. This type is evaluated by the runtime system of libcppa
- *        and can be used to intentionally skip messages.
- */
-enum class match_hint {
-    skip,
-    handle
+struct cs_thread;
+
+class resumable {
+
+ public:
+
+    enum resume_result {
+        resume_later,
+        done
+    };
+
+    // intrusive next pointer needed to use
+    // 'resumable' with 'single_reader_queue'
+    resumable* next;
+
+    virtual ~resumable();
+
+    virtual resume_result resume(detail::cs_thread*) = 0;
+
 };
 
-// implemented in string_serialization.cpp
-std::ostream& operator<<(std::ostream&, match_hint);
-
+} // namespace detail
 } // namespace cppa
 
-#endif // CPPA_MATCH_HINT_HPP
+#endif // CPPA_RESUMABLE_HPP

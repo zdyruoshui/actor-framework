@@ -38,12 +38,12 @@
 #include "cppa/unit.hpp"
 #include "cppa/atom.hpp"
 #include "cppa/anything.hpp"
-#include "cppa/behavior.hpp"
 #include "cppa/any_tuple.hpp"
 #include "cppa/guard_expr.hpp"
-#include "cppa/match_hint.hpp"
 #include "cppa/match_expr.hpp"
-#include "cppa/partial_function.hpp"
+#include "cppa/skip_message.hpp"
+#include "cppa/may_have_timeout.hpp"
+#include "cppa/timeout_definition.hpp"
 
 #include "cppa/util/duration.hpp"
 #include "cppa/util/type_list.hpp"
@@ -227,11 +227,6 @@ namespace cppa {
  */
 constexpr anything any_vals = anything{};
 
-/**
- * @brief Returns {@link match_hint skipped}.
- */
-match_hint skip_message();
-
 #ifdef CPPA_DOCUMENTATION
 
 /**
@@ -282,6 +277,14 @@ __unspecified__ on();
  */
 template<atom_value... Atoms, typename... Ts>
 __unspecified__ on();
+
+/**
+ * @brief Converts @p arg to a match expression by returning
+ *        <tt>on_arg_match >> arg</tt> if @p arg is a callable type,
+ *        otherwise returns @p arg.
+ */
+template<typename T>
+__unspecified__ lift_to_match_expr(T arg);
 
 #else
 

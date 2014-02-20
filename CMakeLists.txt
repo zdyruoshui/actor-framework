@@ -153,6 +153,7 @@ set(LIBCPPA_SRC
     src/context_switching_resume.cpp
     src/continuable.cpp
     src/continue_helper.cpp
+    src/cs_thread.cpp
     src/decorated_tuple.cpp
     src/actor_proxy.cpp
     src/peer.cpp
@@ -165,7 +166,6 @@ set(LIBCPPA_SRC
     src/exception.cpp
     src/exit_reason.cpp
     src/fd_util.cpp
-    src/fiber.cpp
     src/functor_based_actor.cpp
     src/functor_based_blocking_actor.cpp
     src/get_root_uuid.cpp
@@ -186,7 +186,6 @@ set(LIBCPPA_SRC
     src/node_id.cpp
     src/object.cpp
     src/object_array.cpp
-    src/on.cpp
     src/opt.cpp
     src/partial_function.cpp
     src/primitive_variant.cpp

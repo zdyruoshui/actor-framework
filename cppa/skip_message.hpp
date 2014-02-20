@@ -28,48 +28,30 @@
 \******************************************************************************/
 
 
-#ifndef CPPA_FIBER_HPP
-#define CPPA_FIBER_HPP
+#ifndef CPPA_MATCH_HINT_HPP
+#define CPPA_MATCH_HINT_HPP
 
-namespace cppa { namespace util {
-
-struct fiber_impl;
+namespace cppa {
 
 /**
- * @brief A 'lightweight thread' supporting manual context switching.
+ * @brief Optional return type for functors used in pattern matching
+ *        expressions. This type is evaluated by the runtime system of libcppa
+ *        and can be used to intentionally skip messages.
  */
-struct fiber {
+struct skip_message_t { constexpr skip_message_t() { } };
 
-    /**
-     * @brief Queries whether libcppa was compiled without
-     *        fiber support on this platform.
-     */
-    static bool is_disabled_feature();
+/**
+ * @brief Tells the runtime system to skip a message when used as message
+ *        handler, i.e., causes the runtime to leave the message in
+ *        the mailbox of an actor.
+ */
+constexpr skip_message_t skip_message() {
+    return {};
+}
 
-    /**
-     * @brief Creates a new fiber that describes stores the context
-     *        of the calling (kernel) thread.
-     */
-    fiber();
+// implemented in string_serialization.cpp
+std::ostream& operator<<(std::ostream&, skip_message_t);
 
-    /**
-     * @brief Creates a fiber that executes the given function @p func
-     *        using the argument @p arg1.
-     */
-    fiber(void (*func)(void*), void* arg1);
+} // namespace cppa
 
-    ~fiber();
-
-    /**
-     * @brief Swaps the context from @p source to @p target.
-     */
-    static void swap(fiber& source, fiber& target);
-
-    // pimpl
-    fiber_impl* m_impl;
-
-};
-
-} } // namespace cppa::util
-
-#endif // CPPA_FIBER_HPP
+#endif // CPPA_MATCH_HINT_HPP

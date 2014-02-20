@@ -6,9 +6,13 @@ using namespace cppa;
 using namespace cppa::placeholders;
 
 struct sync_mirror : sb_actor<sync_mirror> {
-    behavior init_state = (
-        others() >> [=] { return last_dequeued(); }
-    );
+    behavior init_state;
+    
+    sync_mirror() {
+        init_state = (
+            others() >> [=] { return last_dequeued(); }
+        );
+    }
 };
 
 // replies to 'f' with 0.0f and to 'i' with 0
@@ -75,13 +79,16 @@ struct B : popular_actor {
 };
 
 struct C : sb_actor<C> {
-    behavior init_state = (
-        on(atom("gogo")) >> [=]() -> atom_value {
-            CPPA_CHECKPOINT();
-            quit();
-            return atom("gogogo");
-        }
-    );
+    behavior init_state;
+    C() {
+        init_state = (
+            on(atom("gogo")) >> [=]() -> atom_value {
+                CPPA_CHECKPOINT();
+                quit();
+                return atom("gogogo");
+            }
+        );
+    }
 };
 
 
@@ -217,16 +224,16 @@ void test_sync_send() {
     self->send_exit(mirror, exit_reason::user_shutdown);
     self->await_all_other_actors_done();
     CPPA_CHECKPOINT();
+    auto non_normal_down_msg = [](down_msg dm) -> optional<down_msg> {
+        if (dm.reason != exit_reason::normal) return dm;
+        return none;
+    };
     auto await_success_message = [&] {
         self->receive (
             on(atom("success")) >> CPPA_CHECKPOINT_CB(),
             on(atom("failure")) >> CPPA_FAILURE_CB("A didn't receive sync response"),
-            on_arg_match >> [&](const down_msg& dm) -> match_hint {
-                if (dm.reason != exit_reason::normal) {
-                    CPPA_FAILURE("A exited for reason " << dm.reason);
-                    return match_hint::handle;
-                }
-                return match_hint::skip;
+            on(non_normal_down_msg) >> [&](const down_msg& dm) {
+                CPPA_FAILURE("A exited for reason " << dm.reason);
             }
         );
     };

@@ -41,7 +41,7 @@
 #include "cppa/spawn_options.hpp"
 #include "cppa/typed_event_based_actor.hpp"
 
-#include "cppa/util/fiber.hpp"
+#include "cppa/detail/cs_thread.hpp"
 #include "cppa/util/type_traits.hpp"
 
 #include "cppa/detail/proper_actor.hpp"
@@ -64,13 +64,13 @@ intrusive_ptr<C> spawn_impl(BeforeLaunch before_launch_fun, Ts&&... args) {
                   "top-level spawns cannot have monitor or link flag");
     CPPA_LOGF_TRACE("spawn " << detail::demangle<C>());
     // runtime check wheter context_switching_resume can be used,
-    // i.e., add the detached flag if libcppa compiled without fiber support
-    // when using the blocking API
+    // i.e., add the detached flag if libcppa was compiled
+    // without cs_thread support when using the blocking API
     if (has_blocking_api_flag(Os)
             && !has_detach_flag(Os)
-            && util::fiber::is_disabled_feature()) {
+            && detail::cs_thread::is_disabled_feature) {
         return spawn_impl<C, Os + detached>(before_launch_fun,
-                                                 std::forward<Ts>(args)...);
+                                            std::forward<Ts>(args)...);
     }
     /*
     using scheduling_policy = typename std::conditional<
@@ -231,30 +231,24 @@ class functor_based_typed_actor : public typed_event_based_actor<Rs...> {
     typedef std::function<behavior_type (pointer)> one_arg_fun1;
     typedef std::function<void (pointer)>          one_arg_fun2;
 
-    functor_based_typed_actor(one_arg_fun1 fun) {
-        set(std::move(fun));
-    }
-
-    functor_based_typed_actor(one_arg_fun2 fun) {
-        set(std::move(fun));
-    }
-
-    functor_based_typed_actor(no_arg_fun fun) {
-        set(std::move(fun));
-    }
-
-    template<typename F, typename T, typename... Ts>
-    functor_based_typed_actor(F fun, T&& arg, Ts&&... args) {
-        typedef typename util::get_callable_trait<F>::arg_types arg_types;
+    template<typename F, typename... Ts>
+    functor_based_typed_actor(F fun, Ts&&... args) {
+        typedef typename util::get_callable_trait<F>::type trait;
+        typedef typename trait::arg_types arg_types;
+        typedef typename trait::result_type result_type;
+        constexpr bool returns_behavior = std::is_same<
+                                              result_type,
+                                              behavior_type
+                                          >::value;
         constexpr bool uses_first_arg = std::is_same<
                                             typename util::tl_head<
                                                 arg_types
                                             >::type,
                                             pointer
                                         >::value;
-        std::integral_constant<bool, uses_first_arg> token;
-        bind_and_set(token, std::move(fun),
-                     std::forward<T>(arg), std::forward<Ts>(args)...);
+        std::integral_constant<bool, returns_behavior> token1;
+        std::integral_constant<bool, uses_first_arg>   token2;
+        set(token1, token2, std::move(fun), std::forward<Ts>(args)...);
     }
 
  protected:
@@ -265,29 +259,40 @@ class functor_based_typed_actor : public typed_event_based_actor<Rs...> {
 
  private:
 
-    void set(one_arg_fun1 fun) {
-        m_fun = std::move(fun);
+    template<typename F>
+    void set(std::true_type, std::true_type, F&& fun) {
+        // behavior_type (pointer)
+        m_fun = std::forward<F>(fun);
     }
 
-    void set(one_arg_fun2 fun) {
+    template<typename F>
+    void set(std::false_type, std::true_type, F fun) {
+        // void (pointer)
         m_fun = [fun](pointer ptr) {
             fun(ptr);
             return behavior_type{};
         };
     }
 
-    void set(no_arg_fun fun) {
+    template<typename F>
+    void set(std::true_type, std::false_type, F fun) {
+        // behavior_type ()
         m_fun = [fun](pointer) { return fun(); };
     }
 
-    template<typename F, typename... Ts>
-    void bind_and_set(std::true_type, F fun, Ts&&... args) {
-        set(std::bind(fun, std::placeholders::_1, std::forward<Ts>(args)...));
+    // (false_type, false_type) is an invalid functor for typed actors
+
+    template<class Token, typename F, typename T0, typename... Ts>
+    void set(Token t1, std::true_type t2, F fun, T0&& arg0, Ts&&... args) {
+        set(t1, t2, std::bind(fun, std::placeholders::_1,
+                              std::forward<T0>(arg0),
+                              std::forward<Ts>(args)...));
     }
 
-    template<typename F, typename... Ts>
-    void bind_and_set(std::false_type, F fun, Ts&&... args) {
-        set(std::bind(fun, std::forward<Ts>(args)...));
+    template<class Token, typename F, typename T0, typename... Ts>
+    void set(Token t1, std::false_type t2, F fun, T0&& arg0,  Ts&&... args) {
+        set(t1, t2, std::bind(fun, std::forward<T0>(arg0),
+                              std::forward<Ts>(args)...));
     }
 
     one_arg_fun1 m_fun;
