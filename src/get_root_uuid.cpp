@@ -31,6 +31,10 @@
 #include "cppa/config.hpp"
 #include "cppa/util/get_root_uuid.hpp"
 
+namespace {
+constexpr char uuid_format[] = "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF";
+} // namespace <anonmyous>
+
 #ifdef CPPA_MACOS
 
 namespace {
@@ -174,12 +178,76 @@ std::string get_root_uuid() {
         auto cpy = uuid;
         replace_if(cpy.begin(), cpy.end(), ::isxdigit, 'F');
         // discard invalid UUID
-        if (cpy != "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") uuid.clear();
+        if (cpy != uuid_format) uuid.clear();
+ //     "\\?\Volume{5ec70abf-058c-11e1-bdda-806e6f6e6963}\"
+
     }
     return uuid;
 }
 
 } } // namespace cppa::util
 
-#endif // CPPA_LINUX
+#elif defined(CPPA_WINDOWS)
+
+#include <string>
+#include <iostream>
+#include <algorithm>
+
+#include <windows.h>
+#include <tchar.h>
+
+using namespace std;
+
+namespace cppa { namespace util {
+
+namespace { constexpr size_t max_drive_name = MAX_PATH; }
+
+// if TCHAR is indeed a char, we can simply move rhs
+void mv(std::string& lhs, std::string&& rhs) {
+    lhs = std::move(rhs);
+}
+
+// if TCHAR is defined as WCHAR, we have to do unicode conversion
+void mv(std::string& lhs, const std::basic_string<WCHAR>& rhs) {
+    auto size_needed = WideCharToMultiByte(CP_UTF8, 0, rhs.c_str(),
+                                           static_cast<int>(rhs.size()),
+                                           nullptr, 0, nullptr, nullptr);
+    lhs.resize(size_needed);
+    WideCharToMultiByte(CP_UTF8, 0, rhs.c_str(), static_cast<int>(rhs.size()),
+                        &lhs[0], size_needed, nullptr, nullptr);
+}
+
+std::string get_root_uuid() {
+    typedef std::basic_string<TCHAR> tchar_str;
+    string uuid;
+    TCHAR buf[max_drive_name]; // temporary buffer for volume name
+    tchar_str drive = TEXT("c:\\");   // string "template" for drive specifier
+    // walk through legal drive letters, skipping floppies
+    for (TCHAR i = TEXT('c'); i < TEXT('z');  i++ )  {
+        // Stamp the drive for the appropriate letter.
+        drive[0] = i;
+        if (GetVolumeNameForVolumeMountPoint(drive.c_str(), buf, max_drive_name)) {
+            tchar_str drive_name = buf;
+            auto first = drive_name.find(TEXT("Volume{"));
+            if (first != std::string::npos) {
+                first += 7;
+                auto last = drive_name.find(TEXT("}"), first);
+                if (last != std::string::npos && last > first) {
+                    mv(uuid, drive_name.substr(first, last - first));
+                    // UUIDs are formatted as 8-4-4-4-12 hex digits groups
+                    auto cpy = uuid;
+                    replace_if(cpy.begin(), cpy.end(), ::isxdigit, 'F');
+                    // discard invalid UUID
+                    if (cpy != uuid_format) uuid.clear();
+                    else return uuid; // return first valid UUID we get
+                }
+            }
+        }
+    }
+    return uuid;
+}
+
+} } // namespace cppa::util
+
+#endif // CPPA_WINDOWS
 

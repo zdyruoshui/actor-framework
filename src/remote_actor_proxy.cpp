@@ -48,6 +48,8 @@ inline sync_request_info* new_req_info(actor_addr sptr, message_id id) {
     return detail::memory::create<sync_request_info>(std::move(sptr), id);
 }
 
+sync_request_info::~sync_request_info() { }
+
 sync_request_info::sync_request_info(actor_addr sptr, message_id id)
         : next(nullptr), sender(std::move(sptr)), mid(id) {
 }
@@ -81,7 +83,7 @@ remote_actor_proxy::~remote_actor_proxy() {
     });
 }
 
-void remote_actor_proxy::deliver(const message_header& hdr, any_tuple msg) {
+void remote_actor_proxy::deliver(msg_hdr_cref hdr, any_tuple msg) {
     // this member function is exclusively called from default_peer from inside
     // the middleman's thread, therefore we can safely access
     // m_pending_requests here
@@ -95,7 +97,7 @@ void remote_actor_proxy::deliver(const message_header& hdr, any_tuple msg) {
     hdr.deliver(std::move(msg));
 }
 
-void remote_actor_proxy::forward_msg(const message_header& hdr, any_tuple msg) {
+void remote_actor_proxy::forward_msg(msg_hdr_cref hdr, any_tuple msg) {
     CPPA_LOG_TRACE(CPPA_ARG(m_id) << ", " << CPPA_TSARG(hdr)
                    << ", " << CPPA_TSARG(msg));
     if (hdr.receiver != this) {
@@ -106,7 +108,7 @@ void remote_actor_proxy::forward_msg(const message_header& hdr, any_tuple msg) {
     }
     if (hdr.sender && hdr.id.is_request()) {
         switch (m_pending_requests.enqueue(new_req_info(hdr.sender, hdr.id))) {
-            case intrusive::queue_closed: {
+            case intrusive::enqueue_result::queue_closed: {
                 auto rsn = exit_reason();
                 m_parent->run_later([rsn, hdr] {
                     CPPA_LOGC_TRACE("cppa::io::remote_actor_proxy",
@@ -117,7 +119,14 @@ void remote_actor_proxy::forward_msg(const message_header& hdr, any_tuple msg) {
                 });
                 return; // no need to forward message
             }
-            default: break;
+            case intrusive::enqueue_result::success: {
+                CPPA_LOG_DEBUG("enqueued pending request to non-empty queue");
+                break;
+            }
+            case intrusive::enqueue_result::unblocked_reader: {
+                CPPA_LOG_DEBUG("enqueued pending request to empty queue");
+                break;
+            }
         }
     }
     auto node = m_node;
@@ -130,9 +139,11 @@ void remote_actor_proxy::forward_msg(const message_header& hdr, any_tuple msg) {
     });
 }
 
-void remote_actor_proxy::enqueue(const message_header& hdr, any_tuple msg) {
+void remote_actor_proxy::enqueue(msg_hdr_cref hdr, any_tuple msg,
+                                 execution_unit*) {
     CPPA_REQUIRE(m_parent != nullptr);
-    CPPA_LOG_TRACE(CPPA_TARG(hdr, to_string) << ", " << CPPA_TARG(msg, to_string));
+    CPPA_LOG_TRACE(CPPA_TARG(hdr, to_string)
+                   << ", " << CPPA_TARG(msg, to_string));
     auto& arr = detail::static_types_array<atom_value, uint32_t>::arr;
     if (   msg.size() == 2
         && msg.type_at(0) == arr[0]
@@ -146,11 +157,16 @@ void remote_actor_proxy::enqueue(const message_header& hdr, any_tuple msg) {
                             "enqueue$kill_proxy_helper",
                             "KILL_PROXY " << to_string(_this->address())
                             << " with exit reason " << reason);
-            _this->cleanup(reason);
-            detail::sync_request_bouncer f{reason};
-            _this->m_pending_requests.close([&](const sync_request_info& e) {
-                f(e.sender, e.mid);
-            });
+            if (_this->m_pending_requests.closed()) {
+                CPPA_LOG_WARNING("received KILL_PROXY twice");
+            }
+            else {
+                _this->cleanup(reason);
+                detail::sync_request_bouncer f{reason};
+                _this->m_pending_requests.close([&](const sync_request_info& e) {
+                    f(e.sender, e.mid);
+                });
+            }
         });
     }
     else forward_msg(hdr, move(msg));

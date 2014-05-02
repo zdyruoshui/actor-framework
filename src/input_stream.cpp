@@ -28,43 +28,12 @@
 \******************************************************************************/
 
 
-#ifndef CPPA_EMPTY_TUPLE_HPP
-#define CPPA_EMPTY_TUPLE_HPP
+#include "cppa/io/input_stream.hpp"
 
-#include "cppa/detail/abstract_tuple.hpp"
-#include "cppa/detail/singleton_mixin.hpp"
+namespace cppa {
+namespace io {
 
-namespace cppa { namespace detail {
+input_stream::~input_stream() { }
 
-class empty_tuple : public singleton_mixin<empty_tuple, abstract_tuple> {
-
-    friend class singleton_manager;
-    friend class singleton_mixin<empty_tuple, abstract_tuple>;
-
-    typedef singleton_mixin<empty_tuple, abstract_tuple> super;
-
- public:
-
-    using abstract_tuple::const_iterator;
-
-    size_t size() const;
-    void* mutable_at(size_t);
-    abstract_tuple* copy() const;
-    const void* at(size_t) const;
-    bool equals(const abstract_tuple& other) const;
-    const uniform_type_info* type_at(size_t) const;
-    const std::type_info* type_token() const;
-    const std::string* tuple_type_names() const;
-
- private:
-
-    empty_tuple();
-
-    inline void initialize() { ref(); }
-    inline void destroy() { deref(); }
-
-};
-
-} } // namespace cppa::detail
-
-#endif // CPPA_EMPTY_TUPLE_HPP
+} // namespace io
+} // namespace cppa

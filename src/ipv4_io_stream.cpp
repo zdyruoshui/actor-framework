@@ -33,12 +33,15 @@
 #include <errno.h>
 #include <iostream>
 
+#include "cppa/config.hpp"
 #include "cppa/logging.hpp"
 #include "cppa/exception.hpp"
 #include "cppa/detail/fd_util.hpp"
 #include "cppa/io/ipv4_io_stream.hpp"
 
 #ifdef CPPA_WINDOWS
+#   include <ws2tcpip.h>
+#   include <winsock2.h>
 #else
 #   include <netdb.h>
 #   include <unistd.h>
@@ -87,7 +90,7 @@ void ipv4_io_stream::read(void* vbuf, size_t len) {
 }
 
 size_t ipv4_io_stream::read_some(void* buf, size_t len) {
-    auto recv_result = ::recv(m_fd, buf, len, 0);
+    auto recv_result = ::recv(m_fd, reinterpret_cast<char*>(buf), len, 0);
     handle_read_result(recv_result, true);
     return (recv_result > 0) ? static_cast<size_t>(recv_result) : 0;
 }
@@ -114,7 +117,8 @@ void ipv4_io_stream::write(const void* vbuf, size_t len) {
 }
 
 size_t ipv4_io_stream::write_some(const void* buf, size_t len) {
-    auto send_result = ::send(m_fd, buf, len, 0);
+    CPPA_LOG_TRACE(CPPA_ARG(buf) << ", " << CPPA_ARG(len));
+    auto send_result = ::send(m_fd, reinterpret_cast<const char*>(buf), len, 0);
     handle_write_result(send_result, true);
     return static_cast<size_t>(send_result);
 }
@@ -129,8 +133,12 @@ io::stream_ptr ipv4_io_stream::connect_to(const char* host,
                                           std::uint16_t port) {
     CPPA_LOGF_TRACE(CPPA_ARG(host) << ", " << CPPA_ARG(port));
     CPPA_LOGF_INFO("try to connect to " << host << " on port " << port);
-    struct sockaddr_in serv_addr;
-    struct hostent* server;
+#   ifdef CPPA_WINDOWS
+    // make sure TCP has been initialized via WSAStartup
+    cppa::get_middleman();
+#   endif
+    sockaddr_in serv_addr;
+    hostent* server;
     native_socket_type fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == invalid_socket) {
         throw network_error("socket creation failed");
@@ -143,7 +151,9 @@ io::stream_ptr ipv4_io_stream::connect_to(const char* host,
     }
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    memmove(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    memmove(&serv_addr.sin_addr.s_addr,
+            server->h_addr,
+            static_cast<size_t>(server->h_length));
     serv_addr.sin_port = htons(port);
     CPPA_LOGF_DEBUG("call connect()");
     if (connect(fd, (const sockaddr*) &serv_addr, sizeof(serv_addr)) != 0) {

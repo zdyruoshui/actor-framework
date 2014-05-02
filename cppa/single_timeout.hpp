@@ -62,7 +62,8 @@ class single_timeout : public Base {
             auto msg = make_any_tuple(timeout_msg{tid});
             if (d.is_zero()) {
                 // immediately enqueue timeout message if duration == 0s
-                this->enqueue({this->address(), this}, std::move(msg));
+                this->enqueue({this->address(), this}, std::move(msg),
+                              this->m_host);
                 //auto e = this->new_mailbox_element(this, std::move(msg));
                 //this->m_mailbox.enqueue(e);
             }
@@ -79,15 +80,12 @@ class single_timeout : public Base {
         return waits_for_timeout(tid);
     }
 
-    inline void reset_timeout() {
-        m_has_timeout = false;
+    inline bool has_active_timeout() const {
+        return m_has_timeout;
     }
 
-    inline void handle_timeout(behavior& bhvr, std::uint32_t timeout_id) {
-        if (timeout_id == m_timeout_id) {
-            m_has_timeout = false;
-            bhvr.handle_timeout();
-        }
+    inline void reset_timeout() {
+        m_has_timeout = false;
     }
 
  protected:

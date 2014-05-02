@@ -44,7 +44,6 @@
 #include "cppa/spawn_fwd.hpp"
 #include "cppa/message_id.hpp"
 #include "cppa/match_expr.hpp"
-#include "cppa/actor_state.hpp"
 #include "cppa/exit_reason.hpp"
 #include "cppa/typed_actor.hpp"
 #include "cppa/spawn_options.hpp"
@@ -67,8 +66,6 @@
 namespace cppa {
 
 // forward declarations
-class scheduler;
-class local_scheduler;
 class sync_handle_helper;
 
 /**
@@ -94,34 +91,49 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
     template<class C, spawn_options Os = no_spawn_options, typename... Ts>
     actor spawn(Ts&&... args) {
         constexpr auto os = make_unbound(Os);
-        auto res = cppa::spawn<C, os>(std::forward<Ts>(args)...);
+        auto res = spawn_class<C, os>(m_host, empty_before_launch_callback{},
+                                      std::forward<Ts>(args)...);
         return eval_opts(Os, std::move(res));
     }
 
     template<spawn_options Os = no_spawn_options, typename... Ts>
     actor spawn(Ts&&... args) {
         constexpr auto os = make_unbound(Os);
-        auto res = cppa::spawn<os>(std::forward<Ts>(args)...);
-        return eval_opts(Os, std::move(res));
-    }
-
-    template<spawn_options Os = no_spawn_options, typename... Ts>
-    actor spawn_in_group(const group& grp, Ts&&... args) {
-        constexpr auto os = make_unbound(Os);
-        auto res = cppa::spawn_in_group<os>(grp, std::forward<Ts>(args)...);
+        auto res = spawn_functor<os>(m_host, empty_before_launch_callback{},
+                                     std::forward<Ts>(args)...);
         return eval_opts(Os, std::move(res));
     }
 
     template<class C, spawn_options Os, typename... Ts>
     actor spawn_in_group(const group& grp, Ts&&... args) {
         constexpr auto os = make_unbound(Os);
-        auto res = cppa::spawn_in_group<C, os>(grp, std::forward<Ts>(args)...);
+        auto res = spawn_class<C, os>(m_host, group_subscriber{grp},
+                                      std::forward<Ts>(args)...);
+        return eval_opts(Os, std::move(res));
+    }
+
+    template<spawn_options Os = no_spawn_options, typename... Ts>
+    actor spawn_in_group(const group& grp, Ts&&... args) {
+        constexpr auto os = make_unbound(Os);
+        auto res = spawn_functor<os>(m_host, group_subscriber{grp},
+                                     std::forward<Ts>(args)...);
         return eval_opts(Os, std::move(res));
     }
 
     /**************************************************************************
      *                           spawn typed actors                           *
      **************************************************************************/
+
+    template<class C, spawn_options Os = no_spawn_options, typename... Ts>
+    typename detail::actor_handle_from_signature_list<
+        typename C::signatures
+    >::type
+    spawn_typed(Ts&&... args) {
+        constexpr auto os = make_unbound(Os);
+        auto res = spawn_class<C, os>(m_host, empty_before_launch_callback{},
+                                      std::forward<Ts>(args)...);
+        return eval_opts(Os, std::move(res));
+    }
 
     template<spawn_options Os = no_spawn_options, typename F, typename... Ts>
     typename detail::infer_typed_actor_handle<
@@ -132,18 +144,10 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
     >::type
     spawn_typed(F fun, Ts&&... args) {
         constexpr auto os = make_unbound(Os);
-        auto res = cppa::spawn_typed<os>(std::move(fun),
-                                         std::forward<Ts>(args)...);
-        return eval_opts(Os, std::move(res));
-    }
-
-    template<class C, spawn_options Os = no_spawn_options, typename... Ts>
-    typename detail::actor_handle_from_signature_list<
-        typename C::signatures
-    >::type
-    spawn_typed(Ts&&... args) {
-        constexpr auto os = make_unbound(Os);
-        auto res = cppa::spawn_typed<C, os>(std::forward<Ts>(args)...);
+        auto res = cppa::spawn_typed_functor<os>(m_host,
+                                                 empty_before_launch_callback{},
+                                                 std::move(fun),
+                                                 std::forward<Ts>(args)...);
         return eval_opts(Os, std::move(res));
     }
 
@@ -247,18 +251,17 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
     void send_exit(const actor_addr& whom, std::uint32_t reason);
 
     /**
-     * @copydoc send_exit(const actor_addr&, std::uint32_t)
+     * @brief Sends an exit message to @p whom.
      */
     inline void send_exit(const actor& whom, std::uint32_t reason) {
         send_exit(whom.address(), reason);
     }
 
     /**
-     * @copydoc send_exit(const actor_addr&, std::uint32_t)
+     * @brief Sends an exit message to @p whom.
      */
     template<typename... Rs>
-    void send_exit(const typed_actor<Rs...>& whom,
-                   std::uint32_t reason) {
+    void send_exit(const typed_actor<Rs...>& whom, std::uint32_t reason) {
         send_exit(whom.address(), reason);
     }
 
@@ -295,7 +298,7 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
      * @param whom Receiver of the message.
      * @param rtime Relative time to delay the message in
      *              microseconds, milliseconds, seconds or minutes.
-     * @param data Message content as a tuple.
+     * @param args Message content as a tuple.
      */
     template<typename... Ts>
     void delayed_send(message_priority prio, const channel& whom,
@@ -309,7 +312,7 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
      * @param whom Receiver of the message.
      * @param rtime Relative time to delay the message in
      *              microseconds, milliseconds, seconds or minutes.
-     * @param data Message content as a tuple.
+     * @param args Message content as a tuple.
      */
     template<typename... Ts>
     void delayed_send(const channel& whom, const util::duration& rtime,
@@ -358,7 +361,7 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
      *               {@link on_exit()}.
      * @note Throws {@link actor_exited} to unwind the stack
      *       when called in context-switching or thread-based actors.
-     * @warning This member function throws imeediately in thread-based actors
+     * @warning This member function throws immediately in thread-based actors
      *          that do not use the behavior stack, i.e., actors that use
      *          blocking API calls such as {@link receive()}.
      */
@@ -389,15 +392,15 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
 
     /**
      * @brief Adds a unidirectional @p monitor to @p whom.
-     *
-     * @whom sends a "DOWN" message to this actor as part of its termination.
      * @param whom The actor that should be monitored by this actor.
      * @note Each call to @p monitor creates a new, independent monitor.
      */
     void monitor(const actor_addr& whom);
 
     /**
-     * @copydoc monitor(const actor_addr&)
+     * @brief Adds a unidirectional @p monitor to @p whom.
+     * @param whom The actor that should be monitored by this actor.
+     * @note Each call to @p monitor creates a new, independent monitor.
      */
     inline void monitor(const actor& whom) {
         monitor(whom.address());
@@ -409,6 +412,10 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
      */
     void demonitor(const actor_addr& whom);
 
+    /**
+     * @brief Removes a monitor from @p whom.
+     * @param whom A monitored actor.
+     */
     inline void demonitor(const actor& whom) {
         demonitor(whom.address());
     }
@@ -416,8 +423,6 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
     /**
      * @brief Can be overridden to perform cleanup code after an actor
      *        finished execution.
-     * @warning Must not call any function manipulating the actor's state such
-     *          as join, leave, link, or monitor.
      */
     virtual void on_exit();
 
@@ -472,10 +477,10 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
     template<class ActorHandle>
     inline ActorHandle eval_opts(spawn_options opts, ActorHandle res) {
         if (has_monitor_flag(opts)) {
-            monitor(res.address());
+            monitor(res->address());
         }
         if (has_link_flag(opts)) {
-            link_to(res.address());
+            link_to(res->address());
         }
         return res;
     }
@@ -542,22 +547,7 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
 
     inline void planned_exit_reason(std::uint32_t value);
 
-    actor_state cas_state(actor_state expected, actor_state desired) {
-        auto e = expected;
-        do { if (m_state.compare_exchange_weak(e, desired)) return desired; }
-        while (e == expected);
-        return e;
-    }
-
-    inline void set_state(actor_state new_value) {
-        m_state.store(new_value);
-    }
-
-    inline actor_state state() const {
-        return m_state;
-    }
-
-    void cleanup(std::uint32_t reason);
+    void cleanup(std::uint32_t reason) override;
 
     mailbox_element* dummy_node() {
         return &m_dummy_node;
@@ -593,9 +583,6 @@ class local_actor : public extend<abstract_actor>::with<memory_cached> {
 
     // set by quit
     std::uint32_t m_planned_exit_reason;
-
-    // the state of the (possibly cooperatively scheduled) actor
-    std::atomic<actor_state> m_state;
 
     /** @endcond */
 

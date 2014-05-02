@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
     auto run_remote_actor = true;
     if (argc > 1) {
         if (strcmp(argv[1], "run_remote_actor=false") == 0) {
-            CPPA_LOGF_INFO("don't run remote actor");
+            CPPA_PRINT("don't run remote actor");
             run_remote_actor = false;
         }
         else {
@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
         CPPA_CHECKPOINT();
         thread child;
         ostringstream oss;
-        oss << argv[0] << " run=remote_actor port=" << port << " &>/dev/null";
+        oss << argv[0] << " run=remote_actor port=" << port << to_dev_null;
         // execute client_part() in a separate process,
         // connected via localhost socket
         child = thread([&oss]() {

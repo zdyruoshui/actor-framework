@@ -49,6 +49,10 @@
 #include "cppa/binary_deserializer.hpp"
 
 #include "cppa/util/buffer.hpp"
+#include "cppa/util/algorithm.hpp"
+#include "cppa/util/ripemd_160.hpp"
+#include "cppa/util/get_root_uuid.hpp"
+#include "cppa/util/get_mac_addresses.hpp"
 
 #include "cppa/io/peer.hpp"
 #include "cppa/io/acceptor.hpp"
@@ -65,9 +69,48 @@
 
 #include "cppa/intrusive/single_reader_queue.hpp"
 
+#ifdef CPPA_WINDOWS
+#   include <io.h>
+#   include <fcntl.h>
+#endif
+
 using namespace std;
 
 namespace cppa { namespace io {
+
+void notify_queue_event(native_socket_type fd) {
+    char dummy = 0;
+    // on unix, we have file handles, on windows, we actually have sockets
+#   ifdef CPPA_WINDOWS
+    auto res = ::send(fd, &dummy, sizeof(dummy), 0);
+#   else
+    auto res = ::write(fd, &dummy, sizeof(dummy));
+#   endif
+    // ignore result: an "error" means our middleman has been shut down
+    static_cast<void>(res);
+}
+
+size_t num_queue_events(native_socket_type fd) {
+    static constexpr size_t num_dummies = 64;
+    char dummies[num_dummies];
+    // on unix, we have file handles, on windows, we actually have sockets
+#   ifdef CPPA_WINDOWS
+    auto read_result = ::recv(fd, dummies, num_dummies, 0);
+#   else
+    auto read_result = ::read(fd, dummies, num_dummies);
+#   endif
+    if (read_result < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // try again later
+            return 0;
+        }
+        else {
+            CPPA_LOGF_ERROR("cannot read from pipe");
+            CPPA_CRITICAL("cannot read from pipe");
+        }
+    }
+    return static_cast<size_t>(read_result);
+}
 
 class middleman_event {
 
@@ -127,27 +170,14 @@ class middleman_impl : public middleman {
 
  public:
 
-    middleman_impl() : m_done(false) {
-        m_handler = middleman_event_handler::create();
-        m_namespace.set_proxy_factory([=](actor_id aid, node_id_ptr ptr) {
-            return make_counted<remote_actor_proxy>(aid, std::move(ptr), this);
-        });
-        m_namespace.set_new_element_callback([=](actor_id aid, const node_id& node) {
-            deliver(node,
-                    {invalid_actor_addr, nullptr},
-                    make_any_tuple(atom("MONITOR"),
-                                   node_id::get(),
-                                   aid));
-        });
-    }
+    middleman_impl() : m_done(false) { }
+
+    ~middleman_impl();
 
     void run_later(function<void()> fun) override {
         m_queue.enqueue(new middleman_event(move(fun)));
         atomic_thread_fence(memory_order_seq_cst);
-        uint8_t dummy = 0;
-        auto res = ::write(m_pipe_write, &dummy, sizeof(dummy));
-        // ignore result; write error only means middleman already exited
-        static_cast<void>(res);
+        notify_queue_event(m_pipe_in);
     }
 
     bool register_peer(const node_id& node, peer* ptr) override {
@@ -174,8 +204,10 @@ class middleman_impl : public middleman {
     peer* get_peer(const node_id& node) override {
         CPPA_LOG_TRACE(CPPA_TARG(node, to_string));
         auto i = m_peers.find(node);
-        if (i != m_peers.end()) {
-            CPPA_REQUIRE(i->second.impl != nullptr);
+        // future work (?): we *could* try to be smart here and try to
+        // route all messages to node via other known peers in the network
+        // if i->second.impl == nullptr
+        if (i != m_peers.end() && i->second.impl != nullptr) {
             CPPA_LOG_DEBUG("result = " << i->second.impl);
             return i->second.impl;
         }
@@ -197,7 +229,7 @@ class middleman_impl : public middleman {
     }
 
     void deliver(const node_id& node,
-                 const message_header& hdr,
+                 msg_hdr_cref hdr,
                  any_tuple msg                  ) override {
         auto& entry = m_peers[node];
         if (entry.impl) {
@@ -244,11 +276,11 @@ class middleman_impl : public middleman {
         }
     }
 
-    void register_acceptor(const actor_addr& whom, peer_acceptor* ptr) override {
+    void register_acceptor(const actor_addr& aa, peer_acceptor* ptr) override {
         run_later([=] {
             CPPA_LOGC_TRACE("cppa::io::middleman",
                             "register_acceptor$lambda", "");
-            m_acceptors[whom].push_back(ptr);
+            m_acceptors[aa].push_back(ptr);
             continue_reader(ptr);
         });
     }
@@ -256,26 +288,59 @@ class middleman_impl : public middleman {
  protected:
 
     void initialize() override {
-        int pipefds[2];
-        if (pipe(pipefds) != 0) { CPPA_CRITICAL("cannot create pipe"); }
-        m_pipe_read = pipefds[0];
-        m_pipe_write = pipefds[1];
-        detail::fd_util::nonblocking(m_pipe_read, true);
+        CPPA_LOG_TRACE("");
+#       ifdef CPPA_WINDOWS
+        WSADATA WinsockData;
+        if (WSAStartup(MAKEWORD(2, 2), &WinsockData) != 0) {
+            CPPA_CRITICAL("WSAStartup failed");
+        }
+#       endif
+        m_node = compute_node_id();
+        m_handler = middleman_event_handler::create();
+        m_namespace.set_proxy_factory([=](actor_id aid, node_id_ptr ptr) {
+            return make_counted<remote_actor_proxy>(aid, std::move(ptr), this);
+        });
+        m_namespace.set_new_element_callback([=](actor_id aid,
+                                                 const node_id& node) {
+            deliver(node,
+                    {invalid_actor_addr, nullptr},
+                    make_any_tuple(atom("MONITOR"),
+                                   m_node,
+                                   aid));
+        });
+        auto pipefds = detail::fd_util::create_pipe();
+        m_pipe_out = pipefds.first;
+        m_pipe_in = pipefds.second;
+        detail::fd_util::nonblocking(m_pipe_out, true);
         // start threads
         m_thread = thread([this] { middleman_loop(this); });
     }
 
     void destroy() override {
+        CPPA_LOG_TRACE("");
         run_later([this] {
             CPPA_LOGM_TRACE("destroy$helper", "");
             this->m_done = true;
         });
         m_thread.join();
-        close(m_pipe_read);
-        close(m_pipe_write);
+        closesocket(m_pipe_out);
+        closesocket(m_pipe_in);
+#       ifdef CPPA_WINDOWS
+        WSACleanup();
+#       endif
     }
 
  private:
+
+    static cppa::node_id_ptr compute_node_id() {
+        using namespace cppa::util;
+        auto macs = util::get_mac_addresses();
+        auto hd_serial_and_mac_addr = util::join(macs.begin(), macs.end())
+                                    + util::get_root_uuid();
+        cppa::node_id::host_id_type node_id;
+        ripemd_160(node_id, hd_serial_and_mac_addr);
+        return new cppa::node_id(static_cast<uint32_t>(getpid()), node_id);
+    }
 
     inline void quit() { m_done = true; }
 
@@ -286,8 +351,8 @@ class middleman_impl : public middleman {
     middleman_event_handler& handler();
 
     thread m_thread;
-    native_socket_type m_pipe_read;
-    native_socket_type m_pipe_write;
+    native_socket_type m_pipe_out;
+    native_socket_type m_pipe_in;
     middleman_queue m_queue;
 
     struct peer_entry {
@@ -300,14 +365,19 @@ class middleman_impl : public middleman {
 
 };
 
+// avoid weak-vtables warning by providing dtor out-of-line
+middleman_impl::~middleman_impl() { }
+
 class middleman_overseer : public continuable {
 
     typedef continuable super;
 
  public:
 
-    middleman_overseer(int pipe_fd, middleman_queue& q)
+    middleman_overseer(native_socket_type pipe_fd, middleman_queue& q)
     : super(pipe_fd), m_queue(q) { }
+
+    ~middleman_overseer();
 
     void dispose() override {
         delete this;
@@ -315,21 +385,12 @@ class middleman_overseer : public continuable {
 
     continue_reading_result continue_reading() {
         CPPA_LOG_TRACE("");
-        static constexpr size_t num_dummies = 64;
-        uint8_t dummies[num_dummies];
-        auto read_result = ::read(read_handle(), dummies, num_dummies);
-        CPPA_LOG_DEBUG("read " << read_result << " messages from queue");
-        if (read_result < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // try again later
-                return read_continue_later;
-            }
-            else {
-                CPPA_LOG_ERROR("cannot read from pipe");
-                CPPA_CRITICAL("cannot read from pipe");
-            }
-        }
-        for (int i = 0; i < read_result; ++i) {
+        // on MacOS, recv() on a pipe fd will fail,
+        // on Windows, our pipe is actually composed of two sockets
+        // and there's no read() function to read from sockets
+        auto events = num_queue_events(read_handle());
+        CPPA_LOG_DEBUG("read " << events << " messages from queue");
+        for (size_t i = 0; i < events; ++i) {
             unique_ptr<middleman_event> msg(m_queue.try_pop());
             if (!msg) {
                 CPPA_LOG_ERROR("nullptr dequeued");
@@ -338,7 +399,7 @@ class middleman_overseer : public continuable {
             CPPA_LOGF_DEBUG("execute run_later functor");
             (*msg)();
         }
-        return read_continue_later;
+        return continue_reading_result::continue_later;
     }
 
     void io_failed(event_bitmask) override {
@@ -351,52 +412,71 @@ class middleman_overseer : public continuable {
 
 };
 
+// avoid weak-vtables warning by providing dtor out-of-line
+middleman_overseer::~middleman_overseer() { }
+
 middleman::~middleman() { }
 
 void middleman_loop(middleman_impl* impl) {
     middleman_event_handler* handler = impl->m_handler.get();
     CPPA_LOGF_TRACE("run middleman loop");
     CPPA_LOGF_INFO("middleman runs at "
-                   << to_string(*node_id::get()));
+                   << to_string(impl->node()));
     handler->init();
-    impl->continue_reader(new middleman_overseer(impl->m_pipe_read, impl->m_queue));
+    impl->continue_reader(new middleman_overseer(impl->m_pipe_out,
+                                                 impl->m_queue));
     handler->update();
     while (!impl->done()) {
         handler->poll([&](event_bitmask mask, continuable* io) {
             switch (mask) {
                 default: CPPA_CRITICAL("invalid event");
-                case event::none: break;
+                case event::none:
+                    // should not happen
+                    CPPA_LOGF_WARNING("polled an event::none event");
+                    break;
                 case event::both:
-                case event::write: {
+                case event::write:
                     CPPA_LOGF_DEBUG("handle event::write for " << io);
                     switch (io->continue_writing()) {
-                        case read_failure:
+                        case continue_writing_result::failure:
                             io->io_failed(event::write);
-                            // fall through
-                        case write_closed:
                             impl->stop_writer(io);
-                            CPPA_LOGF_DEBUG("writer removed because of error");
+                            CPPA_LOGF_DEBUG("writer removed because "
+                                            "of an error");
                             break;
-                        case write_done:
+                        case continue_writing_result::closed:
+                            impl->stop_writer(io);
+                            CPPA_LOGF_DEBUG("writer removed because "
+                                            "connection has been closed");
+                            break;
+                        case continue_writing_result::done:
                             impl->stop_writer(io);
                             break;
-                        default: break;
+                        case continue_writing_result::continue_later:
+                            // leave
+                            break;
                     }
                     if (mask == event::write) break;
                     // else: fall through
                     CPPA_LOGF_DEBUG("handle event::both; fall through");
-                }
+                    CPPA_ANNOTATE_FALLTHROUGH;
                 case event::read: {
                     CPPA_LOGF_DEBUG("handle event::read for " << io);
                     switch (io->continue_reading()) {
-                        case read_failure:
+                        case continue_reading_result::failure:
                             io->io_failed(event::read);
-                            // fall through
-                        case read_closed:
                             impl->stop_reader(io);
-                            CPPA_LOGF_DEBUG("remove peer");
+                            CPPA_LOGF_DEBUG("peer removed because a "
+                                            "read error has occured");
                             break;
-                        default: break;
+                        case continue_reading_result::closed:
+                            impl->stop_reader(io);
+                            CPPA_LOGF_DEBUG("peer removed because "
+                                            "connection has been closed");
+                            break;
+                        case continue_reading_result::continue_later:
+                            // nothing to do
+                            break;
                     }
                     break;
                 }
@@ -422,16 +502,19 @@ void middleman_loop(middleman_impl* impl) {
     while (handler->num_sockets() > 0) {
         handler->poll([&](event_bitmask mask, continuable* io) {
             switch (mask) {
+                case event::both:
                 case event::write:
                     switch (io->continue_writing()) {
-                        case write_failure:
+                        case continue_writing_result::failure:
                             io->io_failed(event::write);
-                            // fall through
-                        case write_closed:
-                        case write_done:
+                            CPPA_ANNOTATE_FALLTHROUGH;
+                        case continue_writing_result::closed:
+                        case continue_writing_result::done:
                             handler->erase_later(io, event::write);
                             break;
-                        default: break;
+                        case continue_writing_result::continue_later:
+                            // nothing to do
+                            break;
                     }
                     break;
                 case event::error:
@@ -440,12 +523,12 @@ void middleman_loop(middleman_impl* impl) {
                     handler->erase_later(io, event::both);
                     break;
                 default:
-                    CPPA_LOGF_ERROR("expected event::write only "
-                                    "during shutdown phase");
+                    CPPA_LOGF_WARNING("event::read event during shutdown");
                     handler->erase_later(io, event::read);
                     break;
             }
         });
+        handler->update();
     }
     CPPA_LOGF_DEBUG("middleman loop done");
 }

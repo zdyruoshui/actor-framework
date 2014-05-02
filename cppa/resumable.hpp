@@ -28,58 +28,57 @@
 \******************************************************************************/
 
 
-#ifndef CPPA_THREAD_POOL_SCHEDULER_HPP
-#define CPPA_THREAD_POOL_SCHEDULER_HPP
+#ifndef CPPA_RESUMABLE_HPP
+#define CPPA_RESUMABLE_HPP
 
-#include <thread>
+namespace cppa {
 
-#include "cppa/scheduler.hpp"
+class execution_unit;
 
-#include "cppa/util/producer_consumer_list.hpp"
+namespace detail { struct cs_thread; }
 
-#include "cppa/detail/resumable.hpp"
-
-namespace cppa { namespace detail {
-
-struct cs_thread;
-
-class thread_pool_scheduler : public scheduler {
-
-    typedef scheduler super;
+/**
+ * @brief A cooperatively executed task managed by one or more instances of
+ *        {@link execution_unit}.
+ */
+class resumable {
 
  public:
 
-    struct dummy : resumable {
-        resume_result resume(detail::cs_thread*) override;
+    enum resume_result {
+        resume_later,
+        done,
+        shutdown_execution_unit
     };
 
-    struct worker;
+    resumable();
 
-    thread_pool_scheduler();
+    virtual ~resumable();
 
-    thread_pool_scheduler(size_t num_worker_threads);
+    /**
+     * @brief Initializes this object, e.g., by increasing the
+     *        the reference count.
+     */
+    virtual void attach_to_scheduler() = 0;
 
-    void initialize();
+    /**
+     * @brief Uninitializes this object, e.g., by decrementing the
+     *        the reference count.
+     */
+    virtual void detach_from_scheduler() = 0;
 
-    void destroy();
+    /**
+     * @brief Resume any pending computation until it is either finished
+     *        or needs to be re-scheduled later.
+     */
+    virtual resume_result resume(detail::cs_thread*, execution_unit*) = 0;
 
-    void enqueue(resumable* what) override;
+ protected:
 
- private:
-
-    //typedef util::single_reader_queue<abstract_scheduled_actor> job_queue;
-    typedef util::producer_consumer_list<resumable> job_queue;
-
-    size_t m_num_threads;
-    job_queue m_queue;
-    dummy m_dummy;
-    std::thread m_supervisor;
-
-    static void worker_loop(worker*);
-    static void supervisor_loop(job_queue*, resumable*, size_t);
+    bool m_hidden;
 
 };
 
-} } // namespace cppa::detail
+} // namespace cppa
 
-#endif // CPPA_THREAD_POOL_SCHEDULER_HPP
+#endif // CPPA_RESUMABLE_HPP

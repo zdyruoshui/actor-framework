@@ -28,34 +28,43 @@
 \******************************************************************************/
 
 
-#ifndef CPPA_RESUMABLE_HPP
-#define CPPA_RESUMABLE_HPP
+/******************************************************************************\
+ * Based on work by the mingw-w64 project;                                    *
+ * original header:                                                           *
+ *                                                                            *
+ * Copyright (c) 2012 mingw-w64 project                                       *
+ *                                                                            *
+ * Contributing author: Kai Tietz                                             *
+ *                                                                            *
+ * Permission is hereby granted, free of charge, to any person obtaining a    *
+ * copy of this software and associated documentation files (the "Software"), *
+ * to deal in the Software without restriction, including without limitation  *
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,   *
+ * and/or sell copies of the Software, and to permit persons to whom the      *
+ * Software is furnished to do so, subject to the following conditions:       *
+ *                                                                            *
+ * The above copyright notice and this permission notice shall be included in *
+ * all copies or substantial portions of the Software.                        *
+ *                                                                            *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR *
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   *
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL    *
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER *
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING    *
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER        *
+ * DEALINGS IN THE SOFTWARE.                                                  *
+\******************************************************************************/
+
+#ifndef CPPA_DETAIL_EXECINFO_WINDOWS_HPP
+#define CPPA_DETAIL_EXECINFO_WINDOWS_HPP
 
 namespace cppa {
 namespace detail {
 
-struct cs_thread;
-
-class resumable {
-
- public:
-
-    enum resume_result {
-        resume_later,
-        done
-    };
-
-    // intrusive next pointer needed to use
-    // 'resumable' with 'single_reader_queue'
-    resumable* next;
-
-    virtual ~resumable();
-
-    virtual resume_result resume(detail::cs_thread*) = 0;
-
-};
+int backtrace(void** buffer, int size);
+void backtrace_symbols_fd(void* const* buffer, int size, int fd);
 
 } // namespace detail
 } // namespace cppa
 
-#endif // CPPA_RESUMABLE_HPP
+#endif // CPPA_DETAIL_EXECINFO_WINDOWS_HPP

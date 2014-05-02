@@ -36,7 +36,7 @@ namespace cppa { namespace detail {
 namespace {
 
 // encodes ASCII characters to 6bit encoding
-constexpr char encoding_table[] = {
+constexpr unsigned char encoding_table[] = {
 /*         ..0 ..1 ..2 ..3 ..4 ..5 ..6 ..7 ..8 ..9 ..A ..B ..C ..D ..E ..F    */
 /* 0.. */    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 /* 1.. */    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,

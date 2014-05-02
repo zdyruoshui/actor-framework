@@ -1,5 +1,3 @@
-#define CPPA_VERBOSE_CHECK
-
 #include "cppa/config.hpp"
 
 #include <new>
@@ -61,38 +59,18 @@ using namespace cppa::util;
 using cppa::detail::type_to_ptype;
 using cppa::detail::ptype_to_type;
 
-namespace { const size_t ui32size = sizeof(uint32_t); }
+namespace {
 
 struct struct_a {
     int x;
     int y;
 };
 
-bool operator==(const struct_a& lhs, const struct_a& rhs) {
-    return lhs.x == rhs.x && lhs.y == rhs.y;
-}
-
-bool operator!=(const struct_a& lhs, const struct_a& rhs) {
-    return !(lhs == rhs);
-}
-
 struct struct_b {
     struct_a a;
     int z;
     list<int> ints;
 };
-
-string to_string(const struct_b& what) {
-    return to_string(object::from(what));
-}
-
-bool operator==(const struct_b& lhs, const struct_b& rhs) {
-    return lhs.a == rhs.a && lhs.z == rhs.z && lhs.ints == rhs.ints;
-}
-
-bool operator!=(const struct_b& lhs, const struct_b& rhs) {
-    return !(lhs == rhs);
-}
 
 typedef map<string, u16string> strmap;
 
@@ -101,24 +79,12 @@ struct struct_c {
     set<int> ints;
 };
 
-bool operator==(const struct_c& lhs, const struct_c& rhs) {
-    return lhs.strings == rhs.strings && lhs.ints == rhs.ints;
-}
-
-bool operator!=(const struct_c& lhs, const struct_c& rhs) {
-    return !(lhs == rhs);
-}
-
 struct raw_struct {
     string str;
 };
 
 bool operator==(const raw_struct& lhs, const raw_struct& rhs) {
     return lhs.str == rhs.str;
-}
-
-bool operator!=(const raw_struct& lhs, const raw_struct& rhs) {
-    return lhs.str != rhs.str;
 }
 
 struct raw_struct_type_info : util::abstract_uniform_type_info<raw_struct> {
@@ -140,22 +106,28 @@ struct raw_struct_type_info : util::abstract_uniform_type_info<raw_struct> {
 };
 
 void test_ieee_754() {
-    // check float packing
-    float f1 = 3.1415925;                  // float value
+    // check conversion of float
+    float f1 = 3.1415925f;                 // float value
     auto p1 = cppa::detail::pack754(f1);   // packet value
     CPPA_CHECK_EQUAL(p1, 0x40490FDA);
     auto u1 = cppa::detail::unpack754(p1); // unpacked value
     CPPA_CHECK_EQUAL(f1, u1);
-    // check double packing
-    double f2 = 3.14159265358979311600;    // float value
+    // check conversion of double
+    double f2 = 3.14159265358979311600;    // double value
     auto p2 = cppa::detail::pack754(f2);   // packet value
     CPPA_CHECK_EQUAL(p2, 0x400921FB54442D18);
     auto u2 = cppa::detail::unpack754(p2); // unpacked value
     CPPA_CHECK_EQUAL(f2, u2);
 }
 
+enum class test_enum { a, b, c };
+
+} // namespace <anonymous>
+
 int main() {
     CPPA_TEST(test_serialization);
+
+    announce<test_enum>();
 
     test_ieee_754();
 
@@ -171,7 +143,7 @@ int main() {
 
     actor_namespace addressing;
 
-    cout << "process id: " << to_string(node_id::get()) << endl;
+    cout << "process id: " << to_string(get_middleman()->node()) << endl;
 
     auto oarr = new detail::object_array;
     oarr->push_back(object::from(static_cast<uint32_t>(42)));
@@ -292,6 +264,28 @@ int main() {
             auto str = to_string(object::from(get<uint32_t>(o)));
             CPPA_CHECK_EQUAL( "@u32 ( 42 )", str);
         }
+    }
+    catch (exception& e) { CPPA_FAILURE(to_verbose_string(e)); }
+
+    // test serialization of enums
+    try {
+        auto enum_tuple = make_any_tuple(test_enum::b);
+        // serialize b1 to buf
+        util::buffer wr_buf;
+        binary_serializer bs(&wr_buf, &addressing);
+        bs << enum_tuple;
+        // deserialize b2 from buf
+        binary_deserializer bd(wr_buf.data(), wr_buf.size(), &addressing);
+        any_tuple enum_tuple2;
+        uniform_typeid<any_tuple>()->deserialize(&enum_tuple2, &bd);
+        auto opt = tuple_cast<test_enum>(enum_tuple2);
+        CPPA_CHECK(opt.valid());
+        if (opt.valid()) {
+            auto& tup = *opt;
+            CPPA_CHECK_EQUAL(tup.size(), 1);
+            CPPA_CHECK(get<0>(tup) == test_enum::b);
+        }
+
     }
     catch (exception& e) { CPPA_FAILURE(to_verbose_string(e)); }
 

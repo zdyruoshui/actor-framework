@@ -38,7 +38,10 @@
 #include "cppa/config.hpp"
 #include "cppa/node_id.hpp"
 #include "cppa/serializer.hpp"
+#include "cppa/singletons.hpp"
 #include "cppa/primitive_variant.hpp"
+
+#include "cppa/io/middleman.hpp"
 
 #include "cppa/util/algorithm.hpp"
 #include "cppa/util/ripemd_160.hpp"
@@ -46,27 +49,6 @@
 #include "cppa/util/get_mac_addresses.hpp"
 
 namespace {
-
-cppa::node_id* compute_proc_info() {
-    using namespace cppa::util;
-    auto macs = get_mac_addresses();
-    auto hd_serial_and_mac_addr = join(macs.begin(), macs.end())
-                                + get_root_uuid();
-    cppa::node_id::host_id_type node_id;
-    ripemd_160(node_id, hd_serial_and_mac_addr);
-    return new cppa::node_id(getpid(), node_id);
-}
-
-cppa::node_id_ptr s_pinfo;
-
-struct pinfo_manager {
-    pinfo_manager() {
-        if (!s_pinfo) {
-            s_pinfo.reset(compute_proc_info());
-        }
-    }
-}
-s_pinfo_manager;
 
 std::uint8_t hex_char_value(char c) {
     if (isdigit(c)) {
@@ -96,7 +78,7 @@ void host_id_from_string(const std::string& hash,
     for (size_t i = 0; i < node_id.size(); ++i) {
         // read two characters, each representing 4 bytes
         auto& val = node_id[i];
-        val  = hex_char_value(*j++) << 4;
+        val  = static_cast<uint8_t>(hex_char_value(*j++) << 4);
         val |= hex_char_value(*j++);
     }
 }
@@ -111,7 +93,7 @@ bool equal(const std::string& hash,
         for (size_t i = 0; i < node_id.size(); ++i) {
             // read two characters, each representing 4 bytes
             std::uint8_t val;
-            val  = hex_char_value(*j++) << 4;
+            val  = static_cast<uint8_t>(hex_char_value(*j++) << 4);
             val |= hex_char_value(*j++);
             if (val != node_id[i]) {
                 return false;
@@ -123,6 +105,8 @@ bool equal(const std::string& hash,
     }
     return true;
 }
+
+node_id::~node_id() { }
 
 node_id::node_id(const node_id& other)
 : super(), m_process_id(other.process_id()), m_host_id(other.host_id()) { }
@@ -144,10 +128,6 @@ std::string to_string(const node_id::host_id_type& node_id) {
         oss << static_cast<std::uint32_t>(node_id[i]);
     }
     return oss.str();
-}
-
-const intrusive_ptr<node_id>& node_id::get() {
-    return s_pinfo;
 }
 
 int node_id::compare(const node_id& other) const {

@@ -8,8 +8,13 @@
 
 #include "cppa/cppa.hpp"
 
+#include "cppa/detail/cs_thread.hpp"
+#include "cppa/detail/yield_interface.hpp"
+
 using namespace std;
 using namespace cppa;
+
+namespace {
 
 class event_testee : public sb_actor<event_testee> {
 
@@ -58,11 +63,12 @@ class event_testee : public sb_actor<event_testee> {
 actor spawn_event_testee2(actor parent) {
     struct impl : event_based_actor {
         actor parent;
-        impl(actor parent) : parent(parent) { }
+        impl(actor parent_actor) : parent(parent_actor) { }
         behavior wait4timeout(int remaining) {
             CPPA_LOG_TRACE(CPPA_ARG(remaining));
             return {
-                after(chrono::milliseconds(50)) >> [=] {
+                after(chrono::milliseconds(1)) >> [=] {
+                    CPPA_PRINT(CPPA_ARG(remaining));
                     if (remaining == 1) {
                         send(parent, atom("t2done"));
                         quit();
@@ -275,7 +281,7 @@ behavior echo_actor(event_based_actor* self) {
 struct simple_mirror : sb_actor<simple_mirror> {
 
     behavior init_state;
-    
+
     simple_mirror() {
         init_state = (
             others() >> [=]() -> any_tuple {
@@ -302,10 +308,10 @@ behavior high_priority_testee(event_based_actor* self) {
                     CPPA_CHECKPOINT();
                     self->quit();
                 },
-                others() >> CPPA_UNEXPECTED_MSG_CB()
+                others() >> CPPA_UNEXPECTED_MSG_CB(self)
             );
         },
-        others() >> CPPA_UNEXPECTED_MSG_CB()
+        others() >> CPPA_UNEXPECTED_MSG_CB(self)
     );
 }
 
@@ -327,12 +333,12 @@ struct master : event_based_actor {
 
 struct slave : event_based_actor {
 
-    slave(actor master) : master{master} { }
+    slave(actor master_actor) : master{master_actor} { }
 
     behavior make_behavior() override {
         link_to(master);
         return (
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB(this)
         );
     }
 
@@ -343,7 +349,7 @@ struct slave : event_based_actor {
 void test_serial_reply() {
     auto mirror_behavior = [=](event_based_actor* self) {
         self->become(others() >> [=]() -> any_tuple {
-            CPPA_LOGF_INFO("return self->last_dequeued()");
+            CPPA_PRINT("return self->last_dequeued()");
             return self->last_dequeued();
         });
     };
@@ -357,36 +363,37 @@ void test_serial_reply() {
         auto c4 = self->spawn<linked>(mirror_behavior);
         self->become (
           on(atom("hi there")) >> [=]() -> continue_helper {
-            CPPA_LOGF_INFO("received 'hi there'");
+            CPPA_PRINT("received 'hi there'");
             return self->sync_send(c0, atom("sub0")).then(
               on(atom("sub0")) >> [=]() -> continue_helper {
-                CPPA_LOGF_INFO("received 'sub0'");
+                CPPA_PRINT("received 'sub0'");
                 return self->sync_send(c1, atom("sub1")).then(
                   on(atom("sub1")) >> [=]() -> continue_helper {
-                    CPPA_LOGF_INFO("received 'sub1'");
+                    CPPA_PRINT("received 'sub1'");
                     return self->sync_send(c2, atom("sub2")).then(
                       on(atom("sub2")) >> [=]() -> continue_helper {
-                        CPPA_LOGF_INFO("received 'sub2'");
+                        CPPA_PRINT("received 'sub2'");
                         return self->sync_send(c3, atom("sub3")).then(
                           on(atom("sub3")) >> [=]() -> continue_helper {
-                            CPPA_LOGF_INFO("received 'sub3'");
+                            CPPA_PRINT("received 'sub3'");
                             return self->sync_send(c4, atom("sub4")).then(
                               on(atom("sub4")) >> [=]() -> atom_value {
-                                CPPA_LOGF_INFO("received 'sub4'");
+                                CPPA_PRINT("received 'sub4'");
                                 return atom("hiho");
-                            }
-                          );
-                        }
-                      );
-                    }
-                  );
-                }
-              );
-            }
-          );
-        }
-      );
-    });
+                              }
+                            );
+                          }
+                        );
+                      }
+                    );
+                  }
+                );
+              }
+            );
+          }
+        );
+      }
+    );
     { // lifetime scope of self
         scoped_actor self;
         cout << "ID of main: " << self->id() << endl;
@@ -394,7 +401,7 @@ void test_serial_reply() {
             on(atom("hiho")) >> [] {
                 CPPA_CHECKPOINT();
             },
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
         );
         self->send_exit(master, exit_reason::user_shutdown);
     }
@@ -426,13 +433,13 @@ void test_or_else() {
         self->await_all_other_actors_done();
 
     });
-    CPPA_LOGF_INFO("run_testee: handle_a.or_else(handle_b).or_else(handle_c)");
+    CPPA_PRINT("run_testee: handle_a.or_else(handle_b).or_else(handle_c)");
     run_testee(
         spawn([=] {
             return handle_a.or_else(handle_b).or_else(handle_c);
         })
     );
-    CPPA_LOGF_INFO("run_testee: handle_a.or_else(handle_b), on(\"c\") ...");
+    CPPA_PRINT("run_testee: handle_a.or_else(handle_b), on(\"c\") ...");
     run_testee(
         spawn([=] {
             return (
@@ -441,7 +448,7 @@ void test_or_else() {
             );
         })
     );
-    CPPA_LOGF_INFO("run_testee: on(\"a\") ..., handle_b.or_else(handle_c)");
+    CPPA_PRINT("run_testee: on(\"a\") ..., handle_b.or_else(handle_c)");
     run_testee(
         spawn([=] {
             return (
@@ -476,7 +483,6 @@ void test_continuation() {
 }
 
 void test_simple_reply_response() {
-    scoped_actor self;
     auto s = spawn([](event_based_actor* self) -> behavior {
         return (
             others() >> [=]() -> any_tuple {
@@ -486,6 +492,7 @@ void test_simple_reply_response() {
             }
         );
     });
+    scoped_actor self;
     self->send(s, atom("hello"));
     self->receive(
         others() >> [&] {
@@ -497,10 +504,13 @@ void test_simple_reply_response() {
 
 void test_spawn() {
     test_simple_reply_response();
+    CPPA_CHECKPOINT();
     test_serial_reply();
+    CPPA_CHECKPOINT();
     test_or_else();
+    CPPA_CHECKPOINT();
     test_continuation();
-
+    CPPA_CHECKPOINT();
     scoped_actor self;
     // check whether detached actors and scheduled actors interact w/o errors
     auto m = spawn<master, detached>();
@@ -515,13 +525,15 @@ void test_spawn() {
     self->receive(on(1, 2, 3, true) >> [] { });
     self->send_tuple(self, any_tuple{});
     self->receive(on() >> [] { });
+    self->await_all_other_actors_done();
     CPPA_CHECKPOINT();
 
     CPPA_PRINT("test self->receive with zero timeout");
     self->receive (
-        others() >> CPPA_UNEXPECTED_MSG_CB(),
+        others() >> CPPA_UNEXPECTED_MSG_CB_REF(self),
         after(chrono::seconds(0)) >> [] { /* mailbox empty */ }
     );
+    self->await_all_other_actors_done();
     CPPA_CHECKPOINT();
 
     CPPA_PRINT("test mirror"); {
@@ -529,7 +541,7 @@ void test_spawn() {
         self->send(mirror, "hello mirror");
         self->receive (
             on("hello mirror") >> CPPA_CHECKPOINT_CB(),
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
         );
         self->send_exit(mirror, exit_reason::user_shutdown);
         self->receive (
@@ -537,9 +549,9 @@ void test_spawn() {
                 if (dm.reason == exit_reason::user_shutdown) {
                     CPPA_CHECKPOINT();
                 }
-                else { CPPA_UNEXPECTED_MSG(); }
+                else { CPPA_UNEXPECTED_MSG_CB_REF(self); }
             },
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
         );
         self->await_all_other_actors_done();
         CPPA_CHECKPOINT();
@@ -550,7 +562,7 @@ void test_spawn() {
         self->send(mirror, "hello mirror");
         self->receive (
             on("hello mirror") >> CPPA_CHECKPOINT_CB(),
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
         );
         self->send_exit(mirror, exit_reason::user_shutdown);
         self->receive (
@@ -558,9 +570,9 @@ void test_spawn() {
                 if (dm.reason == exit_reason::user_shutdown) {
                     CPPA_CHECKPOINT();
                 }
-                else { CPPA_UNEXPECTED_MSG(); }
+                else { CPPA_UNEXPECTED_MSG(self); }
             },
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
         );
         self->await_all_other_actors_done();
         CPPA_CHECKPOINT();
@@ -572,7 +584,7 @@ void test_spawn() {
         self->send(mirror, "hello mirror");
         self->receive (
             on("hello mirror") >> CPPA_CHECKPOINT_CB(),
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
         );
         self->send_exit(mirror, exit_reason::user_shutdown);
         self->receive (
@@ -580,9 +592,9 @@ void test_spawn() {
                 if (dm.reason == exit_reason::user_shutdown) {
                     CPPA_CHECKPOINT();
                 }
-                else { CPPA_UNEXPECTED_MSG(); }
+                else { CPPA_UNEXPECTED_MSG(self); }
             },
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
         );
         self->await_all_other_actors_done();
         CPPA_CHECKPOINT();
@@ -593,7 +605,7 @@ void test_spawn() {
     self->send(mecho, "hello echo");
     self->receive (
         on("hello echo") >> [] { },
-        others() >> CPPA_UNEXPECTED_MSG_CB()
+        others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
     );
     self->await_all_other_actors_done();
     CPPA_CHECKPOINT();
@@ -624,12 +636,12 @@ void test_spawn() {
             self->send(cstk, atom("put"), self);
             self->send(cstk, atom("break"));
         },
-        others() >> CPPA_UNEXPECTED_MSG_CB()
+        others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
     );
     self->await_all_other_actors_done();
     CPPA_CHECKPOINT();
 
-    auto st = spawn<fixed_stack>(10);
+    auto st = spawn<fixed_stack>(size_t{10});
     // push 20 values
     for (int i = 0; i < 20; ++i) self->send(st, atom("push"), i);
     // pop 20 times
@@ -659,8 +671,18 @@ void test_spawn() {
     self->await_all_other_actors_done();
     CPPA_CHECKPOINT();
 
-    auto sync_testee1 = spawn<blocking_api>([](blocking_actor* self) {
-        self->receive (
+    auto sync_testee1 = spawn<blocking_api>([](blocking_actor* s) {
+        if (detail::cs_thread::is_disabled_feature) {
+            CPPA_LOGF_WARNING("compiled w/o context switching "
+                              "(skip some tests)");
+        }
+        else {
+            CPPA_CHECKPOINT();
+            // scheduler should switch back immediately
+            detail::yield(detail::yield_state::ready);
+            CPPA_CHECKPOINT();
+        }
+        s->receive (
             on(atom("get")) >> [] {
                 return make_cow_tuple(42, 2);
             }
@@ -684,14 +706,14 @@ void test_spawn() {
             CPPA_CHECK_EQUAL(a, 42);
             CPPA_CHECK_EQUAL(b, 2);
         },
-        others() >> CPPA_UNEXPECTED_MSG_CB(),
+        others() >> CPPA_UNEXPECTED_MSG_CB_REF(self),
         after(chrono::seconds(10)) >> CPPA_UNEXPECTED_TOUT_CB()
     );
     // dequeue remaining async. message
     self->receive (on(0, 0) >> CPPA_CHECKPOINT_CB());
     // make sure there's no other message in our mailbox
     self->receive (
-        others() >> CPPA_UNEXPECTED_MSG_CB(),
+        others() >> CPPA_UNEXPECTED_MSG_CB_REF(self),
         after(chrono::seconds(0)) >> [] { }
     );
     self->await_all_other_actors_done();
@@ -700,12 +722,12 @@ void test_spawn() {
     CPPA_PRINT("test sync send");
 
     CPPA_CHECKPOINT();
-    auto sync_testee = spawn<blocking_api>([](blocking_actor* self) {
-        self->receive (
+    auto sync_testee = spawn<blocking_api>([](blocking_actor* s) {
+        s->receive (
             on("hi", arg_match) >> [&](actor from) {
-                self->sync_send(from, "whassup?", self).await(
+                s->sync_send(from, "whassup?", s).await(
                     on_arg_match >> [&](const string& str) -> string {
-                        CPPA_CHECK(self->last_sender() != nullptr);
+                        CPPA_CHECK(s->last_sender() != nullptr);
                         CPPA_CHECK_EQUAL(str, "nothing");
                         return "goodbye!";
                     },
@@ -715,7 +737,7 @@ void test_spawn() {
                     }
                 );
             },
-            others() >> CPPA_UNEXPECTED_MSG_CB()
+            others() >> CPPA_UNEXPECTED_MSG_CB_REF(s)
         );
     });
     self->monitor(sync_testee);
@@ -743,21 +765,21 @@ void test_spawn() {
 
     self->sync_send(sync_testee, "!?").await(
         on<sync_exited_msg>() >> CPPA_CHECKPOINT_CB(),
-        others() >> CPPA_UNEXPECTED_MSG_CB(),
+        others() >> CPPA_UNEXPECTED_MSG_CB_REF(self),
         after(chrono::milliseconds(5)) >> CPPA_UNEXPECTED_TOUT_CB()
     );
 
     CPPA_CHECKPOINT();
 
-    auto inflater = [](event_based_actor* self, const string& name, actor buddy) {
-        CPPA_LOGF_TRACE(CPPA_ARG(self) << ", " << CPPA_ARG(name)
+    auto inflater = [](event_based_actor* s, const string& name, actor buddy) {
+        CPPA_LOGF_TRACE(CPPA_ARG(s) << ", " << CPPA_ARG(name)
                         << ", " << CPPA_TARG(buddy, to_string));
-        self->become(
-            on_arg_match >> [=](int n, const string& s) {
-                self->send(buddy, n * 2, s + " from " + name);
+        s->become(
+            on_arg_match >> [=](int n, const string& str) {
+                s->send(buddy, n * 2, str + " from " + name);
             },
             on(atom("done")) >> [=] {
-                self->quit();
+                s->quit();
             }
         );
     };
@@ -766,7 +788,7 @@ void test_spawn() {
     self->send(bob, 1, "hello actor");
     self->receive (
         on(4, "hello actor from Bob from Joe") >> CPPA_CHECKPOINT_CB(),
-        others() >> CPPA_UNEXPECTED_MSG_CB()
+        others() >> CPPA_UNEXPECTED_MSG_CB_REF(self)
     );
     // kill joe and bob
     auto poison_pill = make_any_tuple(atom("done"));
@@ -780,15 +802,15 @@ void test_spawn() {
     // - the lambda is always executed in the current actor's thread
     // but using spawn_next in a message handler could
     // still cause undefined behavior!
-    auto kr34t0r = [&spawn_next](event_based_actor* self, const string& name, actor pal) {
+    auto kr34t0r = [&spawn_next](event_based_actor* s, const string& name, actor pal) {
         if (name == "Joe" && !pal) {
-            pal = spawn_next("Bob", self);
+            pal = spawn_next("Bob", s);
         }
-        self->become (
+        s->become (
             others() >> [=] {
                 // forward message and die
-                self->send_tuple(pal, self->last_dequeued());
-                self->quit();
+                s->send_tuple(pal, s->last_dequeued());
+                s->quit();
             }
         );
     };
@@ -828,15 +850,17 @@ void test_spawn() {
     auto res1 = behavior_test<testee_actor>(self, spawn<blocking_api>(testee_actor{}));
     CPPA_CHECK_EQUAL("wait4int", res1);
     CPPA_CHECK_EQUAL(behavior_test<event_testee>(self, spawn<event_testee>()), "wait4int");
+    self->await_all_other_actors_done();
+    CPPA_CHECKPOINT();
 
     // create some actors linked to one single actor
     // and kill them all through killing the link
-    auto legion = spawn([](event_based_actor* self) {
-        CPPA_LOGF_INFO("spawn 1, 000 actors");
-        for (int i = 0; i < 1000; ++i) {
-            self->spawn<event_testee, linked>();
+    auto legion = spawn([](event_based_actor* s) {
+        CPPA_PRINT("spawn 100 actors");
+        for (int i = 0; i < 100; ++i) {
+            s->spawn<event_testee, linked>();
         }
-        self->become(others() >> CPPA_UNEXPECTED_MSG_CB());
+        s->become(others() >> CPPA_UNEXPECTED_MSG_CB(s));
     });
     self->send_exit(legion, exit_reason::user_shutdown);
     self->await_all_other_actors_done();
@@ -887,18 +911,41 @@ void test_spawn() {
     CPPA_CHECKPOINT();
     spawn<high_priority_testee_class, priority_aware>();
     self->await_all_other_actors_done();
-    // don't try this at home, kids
+    // test sending message to self via scoped_actor
     self->send(self, atom("check"));
     self->receive (
         on(atom("check")) >> [] {
             CPPA_CHECKPOINT();
         }
     );
+    CPPA_CHECKPOINT();
+    CPPA_PRINT("check whether timeouts trigger more than once");
+    auto counter = make_shared<int>(0);
+    auto sleeper = self->spawn<monitored>([=](event_based_actor* s) {
+        return after(std::chrono::milliseconds(1)) >> [=] {
+            CPPA_PRINT("received timeout #" << (*counter + 1));
+            if (++*counter > 3) {
+                CPPA_CHECKPOINT();
+                s->quit();
+            }
+        };
+    });
+    self->receive(
+        [&](const down_msg& msg) {
+            CPPA_CHECK_EQUAL(msg.source, sleeper);
+            CPPA_CHECK_EQUAL(msg.reason, exit_reason::normal);
+        }
+    );
+    CPPA_CHECKPOINT();
 }
+
+} // namespace <anonymous>
 
 int main() {
     CPPA_TEST(test_spawn);
     test_spawn();
+    CPPA_CHECKPOINT();
     shutdown();
+    CPPA_CHECKPOINT();
     return CPPA_TEST_RESULT();
 }

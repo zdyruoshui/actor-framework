@@ -90,7 +90,7 @@ class broker : public extend<local_actor>::
 
     enum policy_flag { at_least, at_most, exactly };
 
-    void enqueue(const message_header& hdr, any_tuple msg);
+    void enqueue(msg_hdr_cref, any_tuple, execution_unit*) override;
 
     bool initialized() const;
 
@@ -119,6 +119,8 @@ class broker : public extend<local_actor>::
     }
 
     static broker_ptr from(std::function<void (broker*)> fun, acceptor_uptr in);
+
+    static broker_ptr from(std::function<behavior (broker*)> fun, acceptor_uptr in);
 
     template<typename F, typename T0, typename... Ts>
     static broker_ptr from(F fun, acceptor_uptr in, T0&& arg0, Ts&&... args) {
@@ -172,7 +174,11 @@ class broker : public extend<local_actor>::
                                 input_stream_ptr in,
                                 output_stream_ptr out);
 
-    void invoke_message(const message_header& hdr, any_tuple msg);
+    static broker_ptr from_impl(std::function<behavior (broker*)> fun,
+                                input_stream_ptr in,
+                                output_stream_ptr out);
+
+    void invoke_message(msg_hdr_cref hdr, any_tuple msg);
 
     bool invoke_message_from_cache();
 
@@ -198,7 +204,7 @@ class default_broker : public broker {
 
  public:
 
-    typedef std::function<void (broker*)> function_type;
+    typedef std::function<behavior (broker*)> function_type;
 
     default_broker(function_type f, input_stream_ptr in, output_stream_ptr out);
 

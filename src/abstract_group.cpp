@@ -70,6 +70,7 @@ const std::string& abstract_group::module_name() const {
     return get_module()->name();
 }
 
+namespace {
 struct group_nameserver : event_based_actor {
     behavior make_behavior() override {
         return (
@@ -82,6 +83,7 @@ struct group_nameserver : event_based_actor {
         );
     }
 };
+} // namespace <anonymous>
 
 void publish_local_groups(std::uint16_t port, const char* addr) {
     auto gn = spawn<group_nameserver, hidden>();
@@ -89,9 +91,15 @@ void publish_local_groups(std::uint16_t port, const char* addr) {
         publish(gn, port, addr);
     }
     catch (std::exception&) {
-        gn->enqueue({invalid_actor_addr, nullptr}, make_any_tuple(atom("SHUTDOWN")));
+        gn->enqueue({invalid_actor_addr, nullptr},
+                    make_any_tuple(atom("SHUTDOWN")),
+                    nullptr);
         throw;
     }
 }
+
+abstract_group::module::~module() { }
+
+abstract_group::~abstract_group() { }
 
 } // namespace cppa

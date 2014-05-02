@@ -31,6 +31,8 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "cppa/config.hpp"
+
 #include "cppa/detail/cs_thread.hpp"
 
 namespace {
@@ -38,9 +40,18 @@ namespace {
 typedef void* vptr;
 typedef void (*cst_fun)(vptr);
 
+// Boost's coroutine minimal stack size is pretty small
+// and easily causes stack overflows when using libcppa
+// in debug mode or with logging
+#if defined(CPPA_DEBUG_MODE) || defined(CPPA_LOG_LEVEL)
+constexpr size_t stack_multiplier = 4;
+#else
+constexpr size_t stack_multiplier = 2;
+#endif
+
 } // namespace <anonmyous>
 
-#ifdef CPPA_DISABLE_CONTEXT_SWITCHING
+#if defined(CPPA_DISABLE_CONTEXT_SWITCHING) || defined(CPPA_STANDALONE_BUILD)
 
 namespace cppa { namespace detail {
 
@@ -59,19 +70,19 @@ const bool cs_thread::is_disabled_feature = true;
 
 } } // namespace cppa::detail
 
-#else // ifdef CPPA_DISABLE_CONTEXT_SWITCHING
+#else // CPPA_DISABLE_CONTEXT_SWITCHING  || CPPA_STANDALONE_BUILD
 
 // optional valgrind include
 #ifdef CPPA_ANNOTATE_VALGRIND
 #   include <valgrind/valgrind.h>
 #endif
 
+CPPA_PUSH_WARNINGS
 // boost includes
 #include <boost/version.hpp>
 #include <boost/context/all.hpp>
-#if BOOST_VERSION >= 105300
-#   include <boost/coroutine/all.hpp>
-#endif
+#include <boost/coroutine/all.hpp>
+CPPA_POP_WARNINGS
 
 namespace cppa { namespace detail {
 
@@ -79,7 +90,7 @@ void cst_trampoline(intptr_t iptr);
 
 namespace {
 
-#if CPPA_ANNOTATE_VALGRIND
+#ifdef CPPA_ANNOTATE_VALGRIND
     typedef int vg_member;
     inline void vg_register(vg_member& stack_id, vptr ptr1, vptr ptr2) {
         stack_id = VALGRIND_STACK_REGISTER(ptr1, ptr2);
@@ -129,70 +140,7 @@ namespace {
  * void del_stack(stack_allocator&, ctx_stack_info, vg_member&):
  *     destroys the stack and (optionally) deregisters it from valgrind
  */
-#if BOOST_VERSION == 105100
-    // === namespace aliases ===
-    namespace ctxn = boost::ctx;
-    // === types ===
-    typedef ctxn::fcontext_t      context;
-    struct                        converted_context { };
-    typedef int                   ctx_stack_info;
-    typedef ctxn::stack_allocator stack_allocator;
-    // === functions ===
-    inline void init_converted_context(converted_context&, context&) {/*NOP*/}
-    inline void ctx_switch(context& from, context& to, cst_impl* ptr) {
-        ctxn::jump_fcontext(&from, &to, (intptr_t) ptr);
-    }
-    ctx_stack_info new_stack(context& ctx,
-                                     stack_allocator& alloc,
-                                     vg_member& vgm) {
-        size_t mss = ctxn::minimum_stacksize();
-        ctx.fc_stack.base = alloc.allocate(mss);
-        ctx.fc_stack.limit = reinterpret_cast<vptr>(
-                    reinterpret_cast<intptr_t>(ctx.fc_stack.base) - mss);
-        ctxn::make_fcontext(&ctx, cst_trampoline);
-        vg_register(vgm,
-                    ctx.fc_stack.base,
-                    reinterpret_cast<vptr>(
-                        reinterpret_cast<intptr_t>(ctx.fc_stack.base) - mss));
-        return 0; // dummy value
-    }
-    inline void del_stack(stack_allocator&, ctx_stack_info, vg_member& vgm) {
-        vg_deregister(vgm);
-    }
-#elif BOOST_VERSION < 105400
-    // === namespace aliases ===
-    namespace ctxn = boost::context;
-    // === types ===
-    typedef ctxn::fcontext_t*     context;
-    typedef ctxn::fcontext_t      converted_context;
-    typedef int                   ctx_stack_info;
-#   if BOOST_VERSION < 105300
-        typedef ctxn::guarded_stack_allocator      stack_allocator;
-#   else
-        typedef boost::coroutines::stack_allocator stack_allocator;
-#   endif
-    // === functions ===
-    inline void init_converted_context(converted_context& cctx, context& ctx) {
-        ctx = &cctx;
-    }
-    inline void ctx_switch(context& from, context& to, cst_impl* ptr) {
-        ctxn::jump_fcontext(from, to, (intptr_t) ptr);
-    }
-    ctx_stack_info new_stack(context& ctx,
-                                     stack_allocator& alloc,
-                                     vg_member& vgm) {
-        size_t mss = stack_allocator::minimum_stacksize();
-        ctx = ctxn::make_fcontext(alloc.allocate(mss), mss, cst_trampoline);
-        vg_register(vgm,
-                    ctx->fc_stack.sp,
-                    reinterpret_cast<vptr>(
-                       reinterpret_cast<intptr_t>(ctx->fc_stack.sp) - mss));
-        return 0; // dummy value
-    }
-    inline void del_stack(stack_allocator&, ctx_stack_info, vg_member& vgm) {
-        vg_deregister(vgm);
-    }
-#else // BOOST_VERSION >= 105400
+#if BOOST_VERSION >= 105400
     // === namespace aliases ===
     namespace ctxn = boost::context;
     // === types ===
@@ -210,9 +158,10 @@ namespace {
     ctx_stack_info new_stack(context& ctx,
                                      stack_allocator& alloc,
                                      vg_member& vgm) {
-        size_t mss = stack_allocator::minimum_stacksize();
+        auto mss = static_cast<intptr_t>(  stack_allocator::minimum_stacksize()
+                                         * stack_multiplier);
         ctx_stack_info sinf;
-        alloc.allocate(sinf, mss);
+        alloc.allocate(sinf, static_cast<size_t>(mss));
         ctx = ctxn::make_fcontext(sinf.sp, sinf.size, cst_trampoline);
         vg_register(vgm,
                     ctx->fc_stack.sp,
@@ -226,6 +175,8 @@ namespace {
         vg_deregister(vgm);
         alloc.deallocate(sctx);
     }
+#else
+#   error libcppa context switching requires Boost in version >= 1.54
 #endif
 
 } // namespace <anonymous>
@@ -233,9 +184,7 @@ namespace {
 // base class for cs_thread pimpls
 struct cst_impl {
 
-    cst_impl() : m_ctx() { }
-
-    virtual ~cst_impl() { }
+    virtual ~cst_impl();
 
     virtual void run() = 0;
 
@@ -246,6 +195,10 @@ struct cst_impl {
     context m_ctx;
 
 };
+
+cst_impl::~cst_impl() { }
+
+namespace {
 
 // a cs_thread representing a thread ('converts' the thread to a cs_thread)
 struct converted_cs_thread : cst_impl {
@@ -284,6 +237,8 @@ struct fun_cs_thread : cst_impl {
     ctx_stack_info  m_stack_info; // needed to delete stack in destructor
 
 };
+
+} // namespace <anonymous>
 
 void cst_trampoline(intptr_t iptr) {
     auto ptr = (cst_impl*) iptr;

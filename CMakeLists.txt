@@ -29,35 +29,10 @@ if ("${CMAKE_GENERATOR}" STREQUAL "Xcode")
   set(LIBRARY_OUTPUT_PATH "${EXECUTABLE_OUTPUT_PATH}")
 endif ()
 
-# check if the user provided CXXFLAGS on the command line
-if (CMAKE_CXX_FLAGS)
-  set(CXXFLAGS_PROVIDED true)
-  set(CMAKE_CXX_FLAGS_DEBUG          "")
-  set(CMAKE_CXX_FLAGS_MINSIZEREL     "")
-  set(CMAKE_CXX_FLAGS_RELEASE        "")
-  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "")
-else (CMAKE_CXX_FLAGS)
-  set(CXXFLAGS_PROVIDED false)
-  set(CMAKE_CXX_FLAGS                "-std=c++11 -Wextra -Wall -pedantic")
-  set(CMAKE_CXX_FLAGS_DEBUG          "-O0 -g")
-  set(CMAKE_CXX_FLAGS_MINSIZEREL     "-Os")
-  set(CMAKE_CXX_FLAGS_RELEASE        "-O3 -DNDEBUG")
-  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
-endif (CMAKE_CXX_FLAGS)
-
-include(CheckIncludeFileCXX)
-check_include_file_cxx("valgrind/valgrind.h" HAVE_VALGRIND_H)
-if (HAVE_VALGRIND_H)
-  set(VALGRIND "yes")
-  add_definitions(-DCPPA_ANNOTATE_VALGRIND)
-else (HAVE_VALGRIND_H)
-  set(VALGRIND "no")
-endif (HAVE_VALGRIND_H)
-
 # check for g++ >= 4.7 or clang++ > = 3.2
 try_run(ProgramResult
         CompilationSucceeded
-	${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/get_compiler_version.cpp
+  ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/get_compiler_version.cpp
         RUN_OUTPUT_VARIABLE CompilerVersion)
 if (NOT CompilationSucceeded OR NOT ProgramResult EQUAL 0)
   message(FATAL_ERROR "Cannot determine compiler version")
@@ -83,6 +58,39 @@ else ()
   message(FATAL_ERROR "Your C++ compiler does not support C++11 "
                       "or is not supported")
 endif ()
+
+# check if the user provided CXXFLAGS on the command line
+if (CMAKE_CXX_FLAGS)
+  set(CXXFLAGS_PROVIDED true)
+  set(CMAKE_CXX_FLAGS_DEBUG          "")
+  set(CMAKE_CXX_FLAGS_MINSIZEREL     "")
+  set(CMAKE_CXX_FLAGS_RELEASE        "")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "")
+else (CMAKE_CXX_FLAGS)
+  set(CXXFLAGS_PROVIDED false)
+  if (MORE_CLANG_WARNINGS AND "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    set(CMAKE_CXX_FLAGS "-std=c++11 -pedantic -Weverything -Wno-c++98-compat -Wno-padded -Wno-documentation-unknown-command -Wno-exit-time-destructors -Wno-global-constructors -Wno-missing-prototypes -Wno-c++98-compat-pedantic -Wno-unused-member-function -Wno-unused-const-variable")
+  else ()
+    set(CMAKE_CXX_FLAGS "-std=c++11 -Wextra -Wall -pedantic")
+  endif ()
+  if (MINGW)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWIN32")
+    include (GenerateExportHeader)
+  endif(MINGW)
+  set(CMAKE_CXX_FLAGS_DEBUG          "-O0 -g")
+  set(CMAKE_CXX_FLAGS_MINSIZEREL     "-Os")
+  set(CMAKE_CXX_FLAGS_RELEASE        "-O3 -DNDEBUG")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
+endif (CMAKE_CXX_FLAGS)
+
+include(CheckIncludeFileCXX)
+check_include_file_cxx("valgrind/valgrind.h" HAVE_VALGRIND_H)
+if (HAVE_VALGRIND_H)
+  set(VALGRIND "yes")
+  add_definitions(-DCPPA_ANNOTATE_VALGRIND)
+else (HAVE_VALGRIND_H)
+  set(VALGRIND "no")
+endif (HAVE_VALGRIND_H)
 
 # set build type (evaluate ENABLE_DEBUG flag)
 if (ENABLE_DEBUG)
@@ -111,6 +119,8 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   set(LIBCPPA_PLATFORM_SRC src/middleman_event_handler_epoll.cpp)
 elseif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   set(LIBCPPA_PLATFORM_SRC src/middleman_event_handler_poll.cpp)
+elseif (${CMAKE_SYSTEM_NAME} MATCHES "Window")
+  set(LIBCPPA_PLATFORM_SRC src/middleman_event_handler_poll.cpp src/execinfo_windows.cpp)
 else ()
   message(FATAL_ERROR "This platform is not supported by libcppa")
 endif()
@@ -132,8 +142,10 @@ set(LIBCPPA_SRC
     src/abstract_channel.cpp
     src/abstract_group.cpp
     src/abstract_tuple.cpp
+    src/acceptor.cpp
     src/actor.cpp
     src/actor_addr.cpp
+    src/actor_companion.cpp
     src/actor_namespace.cpp
     src/actor_proxy.cpp
     src/actor_registry.cpp
@@ -155,15 +167,16 @@ set(LIBCPPA_SRC
     src/continue_helper.cpp
     src/cs_thread.cpp
     src/decorated_tuple.cpp
+    src/default_message_queue.cpp
     src/actor_proxy.cpp
     src/peer.cpp
     src/peer_acceptor.cpp
     src/demangle.cpp
     src/deserializer.cpp
     src/duration.cpp
-    src/empty_tuple.cpp
     src/event_based_actor.cpp
     src/exception.cpp
+    src/execution_unit.cpp
     src/exit_reason.cpp
     src/fd_util.cpp
     src/functor_based_actor.cpp
@@ -172,6 +185,7 @@ set(LIBCPPA_SRC
     src/get_mac_addresses.cpp
     src/group.cpp
     src/group_manager.cpp
+    src/input_stream.cpp
     src/ipv4_acceptor.cpp
     src/ipv4_io_stream.cpp
     src/local_actor.cpp
@@ -187,6 +201,7 @@ set(LIBCPPA_SRC
     src/object.cpp
     src/object_array.cpp
     src/opt.cpp
+    src/output_stream.cpp
     src/partial_function.cpp
     src/primitive_variant.cpp
     src/ref_counted.cpp
@@ -199,9 +214,9 @@ set(LIBCPPA_SRC
     src/serializer.cpp
     src/shared_spinlock.cpp
     src/singleton_manager.cpp
+    src/stream.cpp
     src/string_serialization.cpp
     src/sync_request_bouncer.cpp
-    src/thread_pool_scheduler.cpp
     src/to_uniform_name.cpp
     src/type_lookup_table.cpp
     src/unicast_network.cpp
@@ -223,6 +238,9 @@ if (APPLE)
   # -pthread is ignored on MacOSX
 elseif (UNIX)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+elseif (MINGW)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+  set(LD_FLAGS "ws2_32 -liphlpapi")
 endif ()
 
 if (ENABLE_OPENCL)
@@ -241,51 +259,40 @@ if (DISABLE_MEM_MANAGEMENT)
   add_definitions(-DCPPA_DISABLE_MEM_MANAGEMENT)
 endif (DISABLE_MEM_MANAGEMENT)
 
-if (DISABLE_CONTEXT_SWITCHING)
-  # explicitly disabled
-else (DISABLE_CONTEXT_SWITCHING)
-  find_package(Boost 1.51.0 COMPONENTS context)
+if (STANDALONE_BUILD)
+  add_definitions(-DCPPA_STANDALONE_BUILD)
+endif (STANDALONE_BUILD)
+
+if (STANDALONE_BUILD)
+  # explicitly disabled, don't include Boost
+else (STANDALONE_BUILD)
+  find_package(Boost 1.54.0 COMPONENTS system context coroutine)
   # without REQUIRED, find_package(Boost...) returns with Boost_FOUND=FALSE
   if (NOT Boost_FOUND)
     # disable implicitly
+    add_definitions(-DCPPA_STANDALONE_BUILD)
     set(DISABLE_CONTEXT_SWITCHING true)
   else (NOT Boost_FOUND)
-    if (${Boost_VERSION} LESS 105400)
-      set(LD_FLAGS ${LD_FLAGS} ${Boost_CONTEXT_LIBRARY})
-      # nothing to do in this case
-    else ()
-      # for boost >= 1.54, we need coroutines as well
-      message(STATUS "Detected Boost >= 1.54.0, check for coroutines & system")
-      find_package(Boost 1.51.0 COMPONENTS system context coroutine)
-      if (Boost_FOUND)
-        set(LD_FLAGS ${LD_FLAGS} ${Boost_COROUTINE_LIBRARY} ${Boost_CONTEXT_LIBRARY} ${Boost_SYSTEM_LIBRARY})
-      endif ()
-    endif ()
-    # check again, as second find_package might set this to false
-    if (Boost_FOUND)
-      # This hack fixes a problem when the linker search path is the same as
-      # the one provided by the compiler. In this case, CMake replaces the absolute
-      # path (e.g., /path/to/lib.so) with -l<lib>, which may cause it to pick up the wrong
-      # library. So when this replacement happens, we ensure that the right
-      # library gets picked by adding a -L directive for the affected libraries
-      # (which is just Boost Context here).
-      set(CMAKE_EXE_LINKER_FLAGS -L${Boost_LIBRARY_DIRS})
-      set(INCLUDE_DIRS ${INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
-      set(LD_DIRS ${LD_DIRS} ${Boost_LIBRARY_DIRS})
-      set(DISABLE_CONTEXT_SWITCHING false)
-    else ()
-      # disable implicitly
-      set(DISABLE_CONTEXT_SWITCHING true)
-    endif ()
+    set(LD_FLAGS ${LD_FLAGS} ${Boost_COROUTINE_LIBRARY} ${Boost_CONTEXT_LIBRARY} ${Boost_SYSTEM_LIBRARY})
+    # This hack fixes a problem when the linker search path is the same as
+    # the one provided by the compiler. In this case, CMake replaces the absolute
+    # path (e.g., /path/to/lib.so) with -l<lib>, which may cause it to pick up the wrong
+    # library. So when this replacement happens, we ensure that the right
+    # library gets picked by adding a -L directive for the affected libraries
+    # (which is just Boost Context here).
+    set(CMAKE_EXE_LINKER_FLAGS -L${Boost_LIBRARY_DIRS})
+    set(INCLUDE_DIRS ${INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+    set(LD_DIRS ${LD_DIRS} ${Boost_LIBRARY_DIRS})
+    set(DISABLE_CONTEXT_SWITCHING false)
   endif (NOT Boost_FOUND)
-endif (DISABLE_CONTEXT_SWITCHING)
+endif (STANDALONE_BUILD)
 
 # set compiler flag when compiling w/o context-switching actors
 if (DISABLE_CONTEXT_SWITCHING)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCPPA_DISABLE_CONTEXT_SWITCHING")
 endif ()
 
-# bulid shared library if not comiling static only
+# build shared library if not compiling static only
 if (NOT "${CPPA_BUILD_STATIC_ONLY}" STREQUAL "yes")
   add_library(libcppa SHARED ${LIBCPPA_SRC} ${LIBCPPA_HDRS})
   target_link_libraries(libcppa ${LD_FLAGS})
@@ -296,7 +303,9 @@ if (NOT "${CPPA_BUILD_STATIC_ONLY}" STREQUAL "yes")
                         SOVERSION ${LIBRARY_SOVERSION}
                         VERSION ${LIBRARY_VERSION}
                         OUTPUT_NAME cppa)
-  install(TARGETS libcppa LIBRARY DESTINATION lib)
+  if(NOT MINGW)
+    install(TARGETS libcppa LIBRARY DESTINATION lib)
+  endif()
 endif ()
 
 # build static library only if --build-static or --build-static-only was set
@@ -338,6 +347,8 @@ else ()
     #set (CPPA_LIBRARY -L${LIBRARY_OUTPUT_PATH} -lcppa)
   elseif (UNIX)
     set (CPPA_LIBRARY ${LIBRARY_OUTPUT_PATH}/libcppa.so)
+  elseif (MINGW)
+    set (CPPA_LIBRARY ${LIBRARY_OUTPUT_PATH}/libcppa.dll)
   else ()
     message (SEND_FATAL "Host platform not supported ...")
   endif ()

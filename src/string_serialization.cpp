@@ -76,7 +76,7 @@ class string_serializer : public serializer {
         ostream& out;
         bool suppress_quotes;
 
-        pt_writer(ostream& mout, bool suppress_quotes = false) : out(mout), suppress_quotes(suppress_quotes) { }
+        pt_writer(ostream& mout, bool suppress = false) : out(mout), suppress_quotes(suppress) { }
 
         template<typename T>
         void operator()(const T& value) {
@@ -211,6 +211,8 @@ class string_deserializer : public deserializer {
 
     typedef deserializer super;
 
+    typedef string::iterator::difference_type difference_type;
+
     string m_str;
     string::iterator m_pos;
     //size_t m_obj_count;
@@ -222,7 +224,7 @@ class string_deserializer : public deserializer {
         while (*m_pos == ' ' || *m_pos == ',') ++m_pos;
     }
 
-    void throw_malformed(const string& error_msg) {
+    void throw_malformed [[noreturn]] (const string& error_msg) {
         throw logic_error("malformed string: " + error_msg);
     }
 
@@ -338,7 +340,8 @@ class string_deserializer : public deserializer {
     size_t begin_sequence() {
         integrity_check();
         consume('{');
-        return count(m_pos, find(m_pos, m_str.end(), '}'), ',') + 1;
+        auto num_vals = count(m_pos, find(m_pos, m_str.end(), '}'), ',') + 1;
+        return static_cast<size_t>(num_vals);
     }
 
     void end_sequence() {
@@ -415,7 +418,7 @@ class string_deserializer : public deserializer {
             throw logic_error("malformed string (unterminated value)");
         }
         string substr(m_pos, substr_end);
-        m_pos += substr.size();
+        m_pos += static_cast<difference_type>(substr.size());
         if (ptype == pt_u8string || ptype == pt_atom) {
             char needle = (ptype == pt_u8string) ? '"' : '\'';
             // skip trailing "

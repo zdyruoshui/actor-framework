@@ -59,13 +59,15 @@ class mailbox_element : public extend<memory_managed>::with<memory_cached> {
     any_tuple        msg;    // 'content field'
     message_id       mid;
 
+    ~mailbox_element();
+
     mailbox_element(mailbox_element&&) = delete;
     mailbox_element(const mailbox_element&) = delete;
     mailbox_element& operator=(mailbox_element&&) = delete;
     mailbox_element& operator=(const mailbox_element&) = delete;
 
     template<typename T>
-    inline static mailbox_element* create(const message_header& hdr, T&& data) {
+    inline static mailbox_element* create(msg_hdr_cref hdr, T&& data) {
         return detail::memory::create<mailbox_element>(hdr, std::forward<T>(data));
     }
 
@@ -73,7 +75,7 @@ class mailbox_element : public extend<memory_managed>::with<memory_cached> {
 
     mailbox_element() = default;
 
-    mailbox_element(const message_header& hdr, any_tuple data);
+    mailbox_element(msg_hdr_cref hdr, any_tuple data);
 
 };
 

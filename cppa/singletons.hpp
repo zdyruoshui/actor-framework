@@ -39,8 +39,8 @@ inline logging* get_logger() {
     return detail::singleton_manager::get_logger();
 }
 
-inline scheduler* get_scheduler() {
-    return detail::singleton_manager::get_scheduler();
+inline scheduler::coordinator* get_scheduling_coordinator() {
+    return detail::singleton_manager::get_scheduling_coordinator();
 }
 
 inline detail::group_manager* get_group_manager() {
@@ -62,15 +62,6 @@ inline detail::uniform_type_info_map* get_uniform_type_info_map() {
 inline detail::abstract_tuple* get_tuple_dummy() {
     return detail::singleton_manager::get_tuple_dummy();
 }
-
-inline detail::empty_tuple* get_empty_tuple() {
-    return detail::singleton_manager::get_empty_tuple();
-}
-
-inline opencl::opencl_metainfo* get_opencl_metainfo() {
-    return detail::singleton_manager::get_opencl_metainfo();
-}
-
 
 } // namespace cppa
 

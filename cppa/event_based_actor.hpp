@@ -58,6 +58,12 @@ class event_based_actor : public extend<local_actor, event_based_actor>::
                                       behavior_stack_based<behavior>::impl,
                                       sync_sender<nonblocking_response_handle_tag>::impl> {
 
+ public:
+
+    event_based_actor();
+
+    ~event_based_actor();
+
  protected:
 
     /**
@@ -69,6 +75,8 @@ class event_based_actor : public extend<local_actor, event_based_actor>::
      * @brief Forwards the last received message to @p whom.
      */
     void forward_to(const actor& whom);
+
+    bool m_initialized;
 
 };
 

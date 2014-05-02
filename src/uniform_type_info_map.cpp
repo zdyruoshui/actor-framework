@@ -29,6 +29,7 @@
 
 
 #include <array>
+#include <limits>
 #include <string>
 #include <vector>
 #include <cstring>
@@ -61,18 +62,23 @@ namespace cppa { namespace detail {
 // WARNING: this map is sorted, insert new elements *in sorted order* as well!
 /* extern */ const char* mapped_type_names[][2] = {
     { "bool",                                           "bool"                },
+    { "cppa::acceptor_closed_msg",                      "@acceptor_closed"    },
     { "cppa::actor",                                    "@actor"              },
     { "cppa::actor_addr",                               "@addr"               },
     { "cppa::any_tuple",                                "@tuple"              },
     { "cppa::atom_value",                               "@atom"               },
     { "cppa::channel",                                  "@channel"            },
+    { "cppa::connection_closed_msg",                    "@conn_closed"        },
     { "cppa::down_msg",                                 "@down"               },
     { "cppa::exit_msg",                                 "@exit"               },
     { "cppa::group",                                    "@group"              },
+    { "cppa::group_down_msg",                           "@group_down"         },
     { "cppa::intrusive_ptr<cppa::node_id>",             "@proc"               },
     { "cppa::io::accept_handle",                        "@ac_hdl"             },
     { "cppa::io::connection_handle",                    "@cn_hdl"             },
     { "cppa::message_header",                           "@header"             },
+    { "cppa::new_connection_msg",                       "@new_conn"           },
+    { "cppa::new_data_msg",                             "@new_data"           },
     { "cppa::sync_exited_msg",                          "@sync_exited"        },
     { "cppa::sync_timeout_msg",                         "@sync_timeout"       },
     { "cppa::timeout_msg",                              "@timeout"            },
@@ -311,7 +317,7 @@ void deserialize_impl(any_tuple& atref, deserializer* source) {
     atref = uti->as_any_tuple(ptr);
 }
 
-void serialize_impl(const message_header& hdr, serializer* sink) {
+void serialize_impl(msg_hdr_cref hdr, serializer* sink) {
     serialize_impl(hdr.sender, sink);
     serialize_impl(hdr.receiver, sink);
     sink->write_value(hdr.id.integer_value());
@@ -375,7 +381,7 @@ inline void deserialize_impl(util::duration& val, deserializer* source) {
             break;
 
         default:
-            val.unit = util::time_unit::none;
+            val.unit = util::time_unit::invalid;
             break;
     }
     val.count = count_val;
@@ -413,6 +419,14 @@ deserialize_impl(T& dm, deserializer* source) {
     dm.reason = source->read<std::uint32_t>();
 }
 
+inline void serialize_impl(const group_down_msg& dm, serializer* sink) {
+    serialize_impl(dm.source, sink);
+}
+
+inline void deserialize_impl(group_down_msg& dm, deserializer* source) {
+    deserialize_impl(dm.source, source);
+}
+
 inline void serialize_impl(const timeout_msg& tm, serializer* sink) {
     sink->write_value(tm.timeout_id);
 }
@@ -424,6 +438,40 @@ inline void deserialize_impl(timeout_msg& tm, deserializer* source) {
 inline void serialize_impl(const sync_timeout_msg&, serializer*) { }
 
 inline void deserialize_impl(const sync_timeout_msg&, deserializer*) { }
+
+inline void serialize_impl(const new_connection_msg& ncm, serializer* sink) {
+    serialize_impl(ncm.source, sink);
+    serialize_impl(ncm.handle, sink);
+}
+
+inline void deserialize_impl(new_connection_msg& ncm, deserializer* source) {
+    deserialize_impl(ncm.source, source);
+    deserialize_impl(ncm.handle, source);
+}
+
+// serialize_impl + deserialize_impl for new_data_msg depend on
+// buffer_type_info_impl and are thus implemented below that class
+void serialize_impl(const new_data_msg& ndm, serializer* sink);
+void deserialize_impl(new_data_msg& ndm, deserializer* source);
+
+template<typename T>
+typename std::enable_if<
+       std::is_same<T, connection_closed_msg>::value
+    || std::is_same<T, acceptor_closed_msg>::value
+>::type
+serialize_impl(const T& cm, serializer* sink) {
+    serialize_impl(cm.handle, sink);
+}
+
+// exit_msg & down_msg have the same fields
+template<typename T>
+typename std::enable_if<
+       std::is_same<T, connection_closed_msg>::value
+    || std::is_same<T, acceptor_closed_msg>::value
+>::type
+deserialize_impl(T& cm, deserializer* source) {
+    deserialize_impl(cm.handle, source);
+}
 
 bool types_equal(const std::type_info* lhs, const std::type_info* rhs) {
     // in some cases (when dealing with dynamic libraries),
@@ -443,7 +491,9 @@ class uti_base : public uniform_type_info {
     }
 
     bool equals(const void* lhs, const void* rhs) const override {
-        return deref(lhs) == deref(rhs);
+        //return util::safe_equal(deref(lhs), deref(rhs));
+        //return deref(lhs) == deref(rhs);
+        return eq(deref(lhs), deref(rhs));
     }
 
     void* new_instance(const void* ptr) const override {
@@ -467,6 +517,20 @@ class uti_base : public uniform_type_info {
     }
 
     const std::type_info* m_native;
+
+ private:
+
+    template<typename U>
+    typename std::enable_if<std::is_floating_point<U>::value, bool>::type
+    eq(const U& lhs, const U& rhs) const {
+        return util::safe_equal(lhs, rhs);
+    }
+
+    template<typename U>
+    typename std::enable_if<!std::is_floating_point<U>::value, bool>::type
+    eq(const U& lhs, const U& rhs) const {
+        return lhs ==  rhs;
+    }
 
 };
 
@@ -712,6 +776,18 @@ class default_meta_tuple : public uniform_type_info {
 
 };
 
+void serialize_impl(const new_data_msg& ndm, serializer* sink) {
+    buffer_type_info_impl bti;
+    serialize_impl(ndm.handle, sink);
+    bti.serialize(&(ndm.buf), sink);
+}
+
+void deserialize_impl(new_data_msg& ndm, deserializer* source) {
+    buffer_type_info_impl bti;
+    deserialize_impl(ndm.handle, source);
+    bti.deserialize(&(ndm.buf), source);
+}
+
 template<typename T>
 void push_native_type(abstract_int_tinfo* m [][2]) {
     m[sizeof(T)][std::is_signed<T>::value ? 1 : 0]->add_native_type(typeid(T));
@@ -765,42 +841,47 @@ class utim_impl : public uniform_type_info_map {
                          intptr_t                                >(mapping);
         // fill builtin types *in sorted order* (by uniform name)
         auto i = m_builtin_types.begin();
-        *i++ = &m_type_unit;            // @0
-        *i++ = &m_ac_hdl;               // @ac_hdl
-        *i++ = &m_type_actor;           // @actor
-        *i++ = &m_type_actor_addr;      // @actor_addr
-        *i++ = &m_type_atom;            // @atom
-        *i++ = &m_type_buffer;          // @buffer
-        *i++ = &m_type_channel;         // @channel
-        *i++ = &m_cn_hdl;               // @cn_hdl
-        *i++ = &m_type_down_msg;        // @down
-        *i++ = &m_type_duration;        // @duration
-        *i++ = &m_type_exit_msg;        // @exit
-        *i++ = &m_type_group;           // @group
-        *i++ = &m_type_header;          // @header
-        *i++ = &m_type_i16;             // @i16
-        *i++ = &m_type_i32;             // @i32
-        *i++ = &m_type_i64;             // @i64
-        *i++ = &m_type_i8;              // @i8
-        *i++ = &m_type_long_double;     // @ldouble
-        *i++ = &m_type_proc;            // @proc
-        *i++ = &m_type_str;             // @str
-        *i++ = &m_type_strmap;          // @strmap
-        *i++ = &m_type_sync_exited;     // @sync_exited
-        *i++ = &m_type_sync_timeout;    // @sync_timeout
-        *i++ = &m_type_timeout;         // @timeout
-        *i++ = &m_type_tuple;           // @tuple
-        *i++ = &m_type_u16;             // @u16
-        *i++ = &m_type_u16str;          // @u16str
-        *i++ = &m_type_u32;             // @u32
-        *i++ = &m_type_u32str;          // @u32str
-        *i++ = &m_type_u64;             // @u64
-        *i++ = &m_type_u8;              // @u8
-        *i++ = &m_type_bool;            // bool
-        *i++ = &m_type_double;          // double
-        *i++ = &m_type_float;           // float
+        *i++ = &m_type_unit;                // @0
+        *i++ = &m_ac_hdl;                   // @ac_hdl
+        *i++ = &m_acceptor_closed_msg;      // @acceptor_closed
+        *i++ = &m_type_actor;               // @actor
+        *i++ = &m_type_actor_addr;          // @actor_addr
+        *i++ = &m_type_atom;                // @atom
+        *i++ = &m_type_buffer;              // @buffer
+        *i++ = &m_type_channel;             // @channel
+        *i++ = &m_cn_hdl;                   // @cn_hdl
+        *i++ = &m_connection_closed_msg;    // @conn_closed
+        *i++ = &m_type_down_msg;            // @down
+        *i++ = &m_type_duration;            // @duration
+        *i++ = &m_type_exit_msg;            // @exit
+        *i++ = &m_type_group;               // @group
+        *i++ = &m_type_group_down;          // @group_down
+        *i++ = &m_type_header;              // @header
+        *i++ = &m_type_i16;                 // @i16
+        *i++ = &m_type_i32;                 // @i32
+        *i++ = &m_type_i64;                 // @i64
+        *i++ = &m_type_i8;                  // @i8
+        *i++ = &m_type_long_double;         // @ldouble
+        *i++ = &m_new_connection_msg;       // @new_conn
+        *i++ = &m_new_data_msg;             // @new_data
+        *i++ = &m_type_proc;                // @proc
+        *i++ = &m_type_str;                 // @str
+        *i++ = &m_type_strmap;              // @strmap
+        *i++ = &m_type_sync_exited;         // @sync_exited
+        *i++ = &m_type_sync_timeout;        // @sync_timeout
+        *i++ = &m_type_timeout;             // @timeout
+        *i++ = &m_type_tuple;               // @tuple
+        *i++ = &m_type_u16;                 // @u16
+        *i++ = &m_type_u16str;              // @u16str
+        *i++ = &m_type_u32;                 // @u32
+        *i++ = &m_type_u32str;              // @u32str
+        *i++ = &m_type_u64;                 // @u64
+        *i++ = &m_type_u8;                  // @u8
+        *i++ = &m_type_bool;                // bool
+        *i++ = &m_type_double;              // double
+        *i++ = &m_type_float;               // float
         CPPA_REQUIRE(i == m_builtin_types.end());
-#       if CPPA_DEBUG_MODE
+#       ifdef CPPA_DEBUG_MODE
         auto cmp = [](pointer lhs, pointer rhs) {
             return strcmp(lhs->name(), rhs->name()) < 0;
         };
@@ -880,7 +961,7 @@ class utim_impl : public uniform_type_info_map {
             // insert after lower bound (vector is always sorted)
             auto new_pos = std::distance(m_user_types.begin(), i);
             m_user_types.insert(i, uti.release());
-            return m_user_types[new_pos];
+            return m_user_types[static_cast<size_t>(new_pos)];
         }
     }
 
@@ -906,6 +987,7 @@ class utim_impl : public uniform_type_info_map {
     uti_impl<group>                         m_type_group;
 
     // 10-19
+    uti_impl<group_down_msg>                m_type_group_down;
     uti_impl<any_tuple>                     m_type_tuple;
     uti_impl<util::duration>                m_type_duration;
     uti_impl<sync_exited_msg>               m_type_sync_exited;
@@ -915,9 +997,9 @@ class utim_impl : public uniform_type_info_map {
     uti_impl<unit_t>                        m_type_unit;
     uti_impl<atom_value>                    m_type_atom;
     uti_impl<std::string>                   m_type_str;
-    uti_impl<std::u16string>                m_type_u16str;
 
     // 20-29
+    uti_impl<std::u16string>                m_type_u16str;
     uti_impl<std::u32string>                m_type_u32str;
     default_uniform_type_info<strmap>  m_type_strmap;
     uti_impl<bool>                          m_type_bool;
@@ -927,16 +1009,20 @@ class utim_impl : public uniform_type_info_map {
     int_tinfo<std::int8_t>                  m_type_i8;
     int_tinfo<std::uint8_t>                 m_type_u8;
     int_tinfo<std::int16_t>                 m_type_i16;
-    int_tinfo<std::uint16_t>                m_type_u16;
 
-    // 30-33
+    // 30-38
+    int_tinfo<std::uint16_t>                m_type_u16;
     int_tinfo<std::int32_t>                 m_type_i32;
     int_tinfo<std::uint32_t>                m_type_u32;
     int_tinfo<std::int64_t>                 m_type_i64;
     int_tinfo<std::uint64_t>                m_type_u64;
+    uti_impl<new_connection_msg>            m_new_connection_msg;
+    uti_impl<new_data_msg>                  m_new_data_msg;
+    uti_impl<connection_closed_msg>         m_connection_closed_msg;
+    uti_impl<acceptor_closed_msg>           m_acceptor_closed_msg;
 
     // both containers are sorted by uniform name
-    std::array<pointer, 34> m_builtin_types;
+    std::array<pointer, 39> m_builtin_types;
     std::vector<uniform_type_info*> m_user_types;
     mutable util::shared_spinlock m_lock;
 

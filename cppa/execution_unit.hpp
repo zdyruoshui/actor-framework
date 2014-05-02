@@ -28,44 +28,31 @@
 \******************************************************************************/
 
 
-#include <stdexcept>
-#include "cppa/detail/empty_tuple.hpp"
+#ifndef CPPA_DETAIL_EXECUTION_UNIT_HPP
+#define CPPA_DETAIL_EXECUTION_UNIT_HPP
 
-namespace cppa { namespace detail {
+namespace cppa {
 
-empty_tuple::empty_tuple() : super(false) { }
+class resumable;
 
-size_t empty_tuple::size() const {
-    return 0;
-}
+/*
+ * @brief Identifies an execution unit, e.g., a worker thread of the scheduler.
+ */
+class execution_unit {
 
-void* empty_tuple::mutable_at(size_t) {
-    throw std::range_error("empty_tuple::mutable_at()");
-}
+ public:
 
-abstract_tuple* empty_tuple::copy() const {
-    return new empty_tuple;
-}
+    virtual ~execution_unit();
 
-const void* empty_tuple::at(size_t) const {
-    throw std::range_error("empty_tuple::at()");
-}
+    /*
+     * @brief Enqueues @p ptr to the job list of the execution unit.
+     * @warning Must only be called from a {@link resumable} currently
+     *          executed by this execution unit.
+     */
+    virtual void exec_later(resumable* ptr) = 0;
 
-const uniform_type_info* empty_tuple::type_at(size_t) const {
-    throw std::range_error("empty_tuple::type_at()");
-}
+};
 
-bool empty_tuple::equals(const abstract_tuple& other) const {
-    return other.size() == 0;
-}
+} // namespace cppa
 
-const std::type_info* empty_tuple::type_token() const {
-    return &typeid(util::empty_type_list);
-}
-
-const std::string* empty_tuple::tuple_type_names() const {
-    static std::string result = "@<>";
-    return &result;
-}
-
-} } // namespace cppa::detail
+#endif // CPPA_DETAIL_EXECUTION_UNIT_HPP

@@ -33,12 +33,9 @@
 
 #include <atomic>
 
-namespace cppa {
+namespace cppa { class logging; }
 
-class logging;
-class scheduler;
-
-} // namespace cppa
+namespace cppa { namespace scheduler { class coordinator; } }
 
 namespace cppa { namespace io { class middleman; } }
 
@@ -46,7 +43,6 @@ namespace cppa { namespace opencl { class opencl_metainfo; } }
 
 namespace cppa { namespace detail {
 
-class empty_tuple;
 class group_manager;
 class abstract_tuple;
 class actor_registry;
@@ -62,9 +58,7 @@ class singleton_manager {
 
     static logging* get_logger();
 
-    static scheduler* get_scheduler();
-
-    static bool set_scheduler(scheduler*);
+    static scheduler::coordinator* get_scheduling_coordinator();
 
     static group_manager* get_group_manager();
 
@@ -75,8 +69,6 @@ class singleton_manager {
     static uniform_type_info_map* get_uniform_type_info_map();
 
     static abstract_tuple* get_tuple_dummy();
-
-    static empty_tuple* get_empty_tuple();
 
     static opencl::opencl_metainfo* get_opencl_metainfo();
 

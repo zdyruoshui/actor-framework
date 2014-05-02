@@ -70,26 +70,27 @@ class local_group : public abstract_group {
 
  public:
 
-    void send_all_subscribers(const message_header& hdr, const any_tuple& msg) {
+    void send_all_subscribers(msg_hdr_cref hdr, const any_tuple& msg,
+                              execution_unit* eu) {
         CPPA_LOG_TRACE(CPPA_TARG(hdr.sender, to_string) << ", "
                        << CPPA_TARG(msg, to_string));
         shared_guard guard(m_mtx);
         for (auto& s : m_subscribers) {
-            s.enqueue(hdr, msg);
+            s->enqueue(hdr, msg, eu);
         }
     }
 
-    void enqueue(const message_header& hdr, any_tuple msg) override {
+    void enqueue(msg_hdr_cref hdr, any_tuple msg, execution_unit* eu) override {
         CPPA_LOG_TRACE(CPPA_TARG(hdr, to_string) << ", "
                        << CPPA_TARG(msg, to_string));
-        send_all_subscribers(hdr, msg);
-        m_broker->enqueue(hdr, msg);
+        send_all_subscribers(hdr, msg, eu);
+        m_broker->enqueue(hdr, msg, eu);
     }
 
     pair<bool, size_t> add_subscriber(const channel& who) {
         CPPA_LOG_TRACE(CPPA_TARG(who, to_string));
         exclusive_guard guard(m_mtx);
-        if (m_subscribers.insert(who).second) {
+        if (who && m_subscribers.insert(who).second) {
             return {true, m_subscribers.size()};
         }
         return {false, m_subscribers.size()};
@@ -160,7 +161,7 @@ class local_broker : public event_based_actor {
                                 CPPA_TARG(what, to_string));
                 // local forwarding
                 message_header hdr{last_sender(), nullptr};
-                m_group->send_all_subscribers(hdr, what);
+                m_group->send_all_subscribers(hdr, what, m_host);
                 // forward to all acquaintances
                 send_to_acquaintances(what);
             },
@@ -195,7 +196,7 @@ class local_broker : public event_based_actor {
                        << " acquaintances; " << CPPA_TSARG(sender)
                        << ", " << CPPA_TSARG(what));
         for (auto& acquaintance : m_acquaintances) {
-            acquaintance->enqueue({sender, acquaintance}, what);
+            acquaintance->enqueue({sender, acquaintance}, what, m_host);
         }
     }
 
@@ -249,9 +250,9 @@ class local_group_proxy : public local_group {
         }
     }
 
-    void enqueue(const message_header& hdr, any_tuple msg) override {
+    void enqueue(msg_hdr_cref hdr, any_tuple msg, execution_unit* eu) override {
         // forward message to the broker
-        m_broker->enqueue(hdr, make_any_tuple(atom("FORWARD"), move(msg)));
+        m_broker->enqueue(hdr, make_any_tuple(atom("FORWARD"), move(msg)), eu);
     }
 
  private:
@@ -272,7 +273,7 @@ class proxy_broker : public event_based_actor {
         return (
             others() >> [=] {
                 message_header hdr{last_sender(), nullptr};
-                m_group->send_all_subscribers(hdr, last_dequeued());
+                m_group->send_all_subscribers(hdr, last_dequeued(), m_host);
             }
         );
     }
@@ -290,7 +291,7 @@ class local_group_module : public abstract_group::module {
  public:
 
     local_group_module()
-    : super("local"), m_process(node_id::get())
+    : super("local"), m_process(get_middleman()->node())
     , m_actor_utype(uniform_typeid<actor>()){ }
 
     group get(const string& identifier) override {
@@ -378,19 +379,18 @@ class remote_group : public abstract_group {
         CPPA_LOG_ERROR("should never be called");
     }
 
-    void enqueue(const message_header& hdr, any_tuple msg) override {
+    void enqueue(msg_hdr_cref hdr, any_tuple msg, execution_unit* eu) override {
         CPPA_LOG_TRACE("");
-        m_decorated->enqueue(hdr, std::move(msg));
+        m_decorated->enqueue(hdr, std::move(msg), eu);
     }
 
     void serialize(serializer* sink);
 
     void group_down() {
         CPPA_LOG_TRACE("");
-        group this_group{this};
+        group_down_msg gdm{group{this}};
         m_decorated->send_all_subscribers({invalid_actor_addr, nullptr},
-                                          make_any_tuple(atom("GROUP_DOWN"),
-                                                         this_group));
+                                          make_any_tuple(gdm), nullptr);
     }
 
  private:
@@ -464,15 +464,16 @@ class remote_group_module : public abstract_group::module {
         auto sm = make_counted<shared_map>();
         abstract_group::module_ptr this_group{this};
         m_map = sm;
+        typedef map<string, pair<actor, vector<pair<string, remote_group_ptr>>>>
+                peer_map;
+        auto peers = std::make_shared<peer_map>();
         m_map->m_worker = spawn<hidden>([=](event_based_actor* self) -> behavior {
             CPPA_LOGC_TRACE(detail::demangle(typeid(*this_group)),
                             "remote_group_module$worker",
                             "");
-            typedef map<string, pair<actor, vector<pair<string, remote_group_ptr>>>>
-                    peer_map;
-            auto peers = std::make_shared<peer_map>();
-            return (
+            return {
                 on(atom("FETCH"), arg_match) >> [=](const string& key) {
+                    CPPA_LOGF_TRACE("");
                     // format is group@host:port
                     auto pos1 = key.find('@');
                     auto pos2 = key.find(':');
@@ -489,22 +490,19 @@ class remote_group_module : public abstract_group::module {
                         else {
                             auto host = key.substr(pos1 + 1, pos2 - pos1 - 1);
                             auto pstr = key.substr(pos2 + 1);
-                            istringstream iss(pstr);
-                            uint16_t port;
-                            if (iss >> port) {
-                                try {
-                                    nameserver = remote_actor(host, port);
-                                    self->monitor(nameserver);
-                                    (*peers)[authority].first = nameserver;
-                                }
-                                catch (exception&) {
-                                    sm->put(key, nullptr);
-                                    return;
-                                }
+                            try {
+                                auto port = static_cast<uint16_t>(std::stoi(pstr));
+                                nameserver = remote_actor(host, port);
+                                self->monitor(nameserver);
+                                (*peers)[authority].first = nameserver;
+                            }
+                            catch (exception&) {
+                                sm->put(key, nullptr);
+                                return;
                             }
                         }
                         self->timed_sync_send(nameserver, chrono::seconds(10), atom("GET_GROUP"), name).then (
-                            on(atom("GROUP"), arg_match) >> [&](const group& g) {
+                            on(atom("GROUP"), arg_match) >> [=](const group& g) {
                                 auto gg = dynamic_cast<local_group*>(detail::raw_access::get(g));
                                 if (gg) {
                                     auto rg = make_counted<remote_group>(this_group, key, gg);
@@ -521,29 +519,34 @@ class remote_group_module : public abstract_group::module {
                                     sm->put(key, nullptr);
                                 }
                             },
-                            on<sync_timeout_msg>() >> [sm, &key] {
+                            on<sync_timeout_msg>() >> [sm, key] {
+                                CPPA_LOGF_WARNING("'GET_GROUP' timed out");
                                 sm->put(key, nullptr);
                             }
                         );
                     }
                 },
-                on_arg_match >> [&](const down_msg&) {
+                on_arg_match >> [=](const down_msg&) {
                     auto who = self->last_sender();
-                    auto find_peer = [&] {
-                        return find_if(begin(*peers), end(*peers), [&](const peer_map::value_type& kvp) {
-                            return kvp.second.first == who;
-                        });
-                    };
-                    for (auto i = find_peer(); i != peers->end(); i = find_peer()) {
-                        for (auto& kvp: i->second.second) {
-                            sm->put(kvp.first, nullptr);
-                            kvp.second->group_down();
+                    auto i = peers->begin();
+                    auto last = peers->end();
+                    while (i != last) {
+                        auto& e = i->second;
+                        if (e.first == who) {
+                            for (auto& kvp: e.second) {
+                                sm->put(kvp.first, nullptr);
+                                kvp.second->group_down();
+                            }
+                            i = peers->erase(i);
                         }
-                        peers->erase(i);
+                        else ++i;
                     }
                 },
-                others() >> [] { }
-            );
+                others() >> [=] {
+                    CPPA_LOGF_ERROR("unexpected message: "
+                                    << to_string(self->last_dequeued()));
+                }
+            };
         });
     }
 
@@ -587,6 +590,8 @@ atomic<size_t> m_ad_hoc_id;
 } // namespace <anonymous>
 
 namespace cppa { namespace detail {
+
+group_manager::~group_manager() { }
 
 group_manager::group_manager() {
     abstract_group::unique_module_ptr ptr(new local_group_module);

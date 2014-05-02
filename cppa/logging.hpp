@@ -34,8 +34,9 @@
 #include <cstring>
 #include <sstream>
 #include <iostream>
-#include <execinfo.h>
 #include <type_traits>
+
+#include "cppa/config.hpp"
 
 #include "cppa/singletons.hpp"
 #include "cppa/abstract_actor.hpp"
@@ -69,7 +70,7 @@ class logging {
 
     // associates given actor id with this thread,
     // returns the previously set actor id
-    virtual actor_id set_aid(actor_id aid) = 0;
+    actor_id set_aid(actor_id aid);
 
     virtual void log(const char* level,
                      const char* class_name,
@@ -166,15 +167,17 @@ oss_wr operator<<(oss_wr&& lhs, T rhs) {
         std::cerr << "[" << lvlname << "] " << classname << "::"               \
                   << funname << ": " << message << "\nStack trace:\n";         \
         void* bt_array[20];                                                    \
-        size_t size = backtrace(bt_array, 20);                                 \
-        backtrace_symbols_fd(bt_array, size, 2);                               \
+        auto cppa_bt_size = ::cppa::detail::backtrace(bt_array, 20);           \
+        ::cppa::detail::backtrace_symbols_fd(bt_array, cppa_bt_size, 2);       \
     } CPPA_VOID_STMT
 
 #ifndef CPPA_LOG_LEVEL
+    inline cppa::actor_id cppa_set_aid_dummy() { return 0; }
 #   define CPPA_LOG_IMPL(lvlname, classname, funname, message)                 \
         CPPA_PRINT_ERROR_IMPL(lvlname, classname, funname, message)
-#   define CPPA_PUSH_AID(unused)
-#   define CPPA_SET_AID(unused) 0
+#   define CPPA_PUSH_AID(unused) static_cast<void>(0)
+#   define CPPA_PUSH_AID_FROM_PTR(unused) static_cast<void>(0)
+#   define CPPA_SET_AID(unused) cppa_set_aid_dummy()
 #   define CPPA_LOG_LEVEL 1
 #else
 #   define CPPA_LOG_IMPL(lvlname, classname, funname, message)                 \
@@ -188,11 +191,14 @@ oss_wr operator<<(oss_wr&& lhs, T rhs) {
         auto aid_pop_guard = ::cppa::util::make_scope_guard([=] {              \
             ::cppa::get_logger()->set_aid(prev_aid_in_scope);                  \
         })
+#   define CPPA_PUSH_AID_FROM_PTR(some_ptr)                                    \
+        auto aid_ptr_argument = some_ptr;                                      \
+        CPPA_PUSH_AID(aid_ptr_argument ? aid_ptr_argument->id() : 0)
 #   define CPPA_SET_AID(aid_arg)                                              \
     ::cppa::get_logger()->set_aid(aid_arg)
 #endif
 
-#define CPPA_CLASS_NAME ::cppa::detail::demangle(typeid(*this)).c_str()
+#define CPPA_CLASS_NAME cppa::detail::demangle(typeid(decltype(*this))).c_str()
 
 #define CPPA_PRINT0(lvlname, classname, funname, msg)                          \
     CPPA_LOG_IMPL(lvlname, classname, funname, msg)
@@ -207,7 +213,7 @@ oss_wr operator<<(oss_wr&& lhs, T rhs) {
 #define CPPA_PRINT_IF1(stmt, lvlname, classname, funname, msg)                 \
     CPPA_PRINT_IF0(stmt, lvlname, classname, funname, msg)
 
-#if CPPA_LOG_LEVEL < 4
+#if CPPA_LOG_LEVEL < CPPA_TRACE
 #       define CPPA_PRINT4(arg0, arg1, arg2, arg3)
 #   else
 #       define CPPA_PRINT4(lvlname, classname, funname, msg)                   \
@@ -217,7 +223,7 @@ oss_wr operator<<(oss_wr&& lhs, T rhs) {
                }
 #endif
 
-#if CPPA_LOG_LEVEL < 3
+#if CPPA_LOG_LEVEL < CPPA_DEBUG
 #       define CPPA_PRINT3(arg0, arg1, arg2, arg3)
 #       define CPPA_PRINT_IF3(arg0, arg1, arg2, arg3, arg4)
 #   else
@@ -227,7 +233,7 @@ oss_wr operator<<(oss_wr&& lhs, T rhs) {
                CPPA_PRINT_IF0(stmt, lvlname, classname, funname, msg)
 #endif
 
-#if CPPA_LOG_LEVEL < 2
+#if CPPA_LOG_LEVEL < CPPA_INFO
 #       define CPPA_PRINT2(arg0, arg1, arg2, arg3)
 #       define CPPA_PRINT_IF2(arg0, arg1, arg2, arg3, arg4)
 #   else

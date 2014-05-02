@@ -52,6 +52,8 @@ class node_id : public ref_counted, util::comparable<node_id> {
 
  public:
 
+    ~node_id();
+
     /**
      * @brief @c libcppa uses 160 bit hashes (20 bytes).
      */
@@ -77,7 +79,7 @@ class node_id : public ref_counted, util::comparable<node_id> {
     /**
      * @brief Creates @c this from @p process_id and @p hash.
      * @param process_id System-wide unique process identifier.
-     * @param hash Unique node id.
+     * @param node_id Unique node id.
      */
     node_id(std::uint32_t process_id, const host_id_type& node_id);
 
@@ -93,12 +95,6 @@ class node_id : public ref_counted, util::comparable<node_id> {
      *          and the UUID of the root partition (mounted in "/" or "C:").
      */
     inline const host_id_type& host_id() const { return m_host_id; }
-
-    /**
-     * @brief Returns the proccess_information for the running process.
-     * @returns A pointer to the singleton of this process.
-     */
-    static const intrusive_ptr<node_id>& get();
 
     /** @cond PRIVATE */
 
