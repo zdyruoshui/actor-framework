@@ -23,14 +23,6 @@ constexpr size_t array_size = 32;
 
 constexpr int magic_number = 23;
 
-// since we do currently not support local memory arguments
-// this size is fixed in the reduce kernel code
-constexpr size_t reduce_buffer_size = 512 * 8;
-constexpr size_t reduce_local_size  = 512;
-constexpr size_t reduce_work_groups = reduce_buffer_size / reduce_local_size;
-constexpr size_t reduce_global_size = reduce_buffer_size;
-constexpr size_t reduce_result_size = reduce_work_groups;
-
 constexpr const char* kernel_name = "matrix_square";
 constexpr const char* kernel_name_compiler_flag = "compiler_flag";
 constexpr const char* kernel_name_reduce = "reduce";
@@ -180,6 +172,22 @@ inline bool operator!=(const square_matrix<Size>& lhs,
 
 using matrix_type = square_matrix<matrix_size>;
 
+size_t get_max_workgroup_size(size_t max_dimension) {
+    size_t max_size = 512;
+    vector<device_info> devices = get_opencl_metainfo()->get_devices();
+    for_each(devices.begin(), devices.end(), [&](device_info dev) {
+        dim_vec dims = dev.get_max_work_items_per_dim();
+
+        for(size_t i = 0; i < max_dimension && i < dims.size(); ++i) {
+            if(dims[i] < max_size) {
+                max_size = dims[i];
+            }
+        }
+    });
+
+    return max_size;
+}
+
 void test_opencl() {
 
     scoped_actor self;
@@ -277,6 +285,13 @@ void test_opencl() {
     );
 
     // test for manuel return size selection
+    size_t max_workgroup_size = get_max_workgroup_size(2); // max workgroup size (2d)
+    size_t reduce_buffer_size = max_workgroup_size * 8;
+    size_t reduce_local_size  = max_workgroup_size;
+    size_t reduce_work_groups = reduce_buffer_size / reduce_local_size;
+    size_t reduce_global_size = reduce_buffer_size;
+    size_t reduce_result_size = reduce_work_groups;
+
     ivec arr6(reduce_buffer_size);
     int n{static_cast<int>(arr6.capacity())};
     generate(begin(arr6), end(arr6), [&]{ return --n; });
@@ -287,13 +302,15 @@ void test_opencl() {
                                          {reduce_local_size},
                                          reduce_result_size);
     self->send(worker6, move(arr6));
-    fvec expected4{3584, 3072, 2560, 2048, 1536, 1024, 512, 0};
+    fvec expected4{ (float)max_workgroup_size * 7, (float)max_workgroup_size * 6,
+                    (float)max_workgroup_size * 5, (float)max_workgroup_size * 4,
+                    (float)max_workgroup_size * 3, (float)max_workgroup_size * 2,
+                    (float)max_workgroup_size, 0 };
     self->receive (
         on_arg_match >> [&] (const ivec& result) {
             CPPA_CHECK(equal(begin(expected4), end(expected4), begin(result)));
         }
     );
-
 
     // constant memory arguments
     ivec arr7{magic_number};
