@@ -359,3 +359,7 @@ unit_testing/test_typed_remote_actor.cpp
 unit_testing/test_typed_spawn.cpp
 unit_testing/test_uniform_type.cpp
 unit_testing/test_yield_interface.cpp
+cppa/io/ip_udp_acceptor.hpp
+src/ip_udp_acceptor.cpp
+cppa/io/ip_udp_io_stream.hpp
+src/ip_udp_io_stream.cpp
