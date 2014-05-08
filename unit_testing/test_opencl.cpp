@@ -285,7 +285,7 @@ void test_opencl() {
     );
 
     // test for manuel return size selection
-    size_t max_workgroup_size = get_max_workgroup_size(2); // max workgroup size (2d)
+    int max_workgroup_size = static_cast<int>(get_max_workgroup_size(2)); // max workgroup size (2d)
     size_t reduce_buffer_size = max_workgroup_size * 8;
     size_t reduce_local_size  = max_workgroup_size;
     size_t reduce_work_groups = reduce_buffer_size / reduce_local_size;
@@ -302,10 +302,10 @@ void test_opencl() {
                                          {reduce_local_size},
                                          reduce_result_size);
     self->send(worker6, move(arr6));
-    fvec expected4{ (float)max_workgroup_size * 7, (float)max_workgroup_size * 6,
-                    (float)max_workgroup_size * 5, (float)max_workgroup_size * 4,
-                    (float)max_workgroup_size * 3, (float)max_workgroup_size * 2,
-                    (float)max_workgroup_size, 0 };
+    ivec expected4{ max_workgroup_size * 7, max_workgroup_size * 6,
+                    max_workgroup_size * 5, max_workgroup_size * 4,
+                    max_workgroup_size * 3, max_workgroup_size * 2,
+                    max_workgroup_size, 0 };
     self->receive (
         on_arg_match >> [&] (const ivec& result) {
             CPPA_CHECK(equal(begin(expected4), end(expected4), begin(result)));
