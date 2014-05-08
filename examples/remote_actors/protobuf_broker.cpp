@@ -42,8 +42,8 @@
 
 #include "cppa/io/broker.hpp"
 #include "cppa/io/middleman.hpp"
-#include "cppa/io/ipv4_acceptor.hpp"
-#include "cppa/io/ipv4_io_stream.hpp"
+#include "cppa/io/tcp_acceptor.hpp"
+#include "cppa/io/tcp_io_stream.hpp"
 
 CPPA_PUSH_WARNINGS
 #include "pingpong.pb.h"
@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
         },
         on("-c", val<string>, as_u16) >> [&](const string& host, uint16_t port) {
             auto ping_actor = spawn(ping, 20);
-            auto io_actor = spawn_io(protobuf_io, host, port, ping_actor);
+            auto io_actor = spawn_io_client(protobuf_io, host, port, ping_actor);
             print_on_exit(io_actor, "protobuf_io");
             print_on_exit(ping_actor, "ping");
             send_as(io_actor, ping_actor, atom("kickoff"), io_actor);

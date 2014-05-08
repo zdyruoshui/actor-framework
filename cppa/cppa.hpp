@@ -72,8 +72,8 @@
 #include "cppa/io/input_stream.hpp"
 #include "cppa/io/output_stream.hpp"
 #include "cppa/io/accept_handle.hpp"
-#include "cppa/io/ipv4_acceptor.hpp"
-#include "cppa/io/ipv4_io_stream.hpp"
+#include "cppa/io/tcp_acceptor.hpp"
+#include "cppa/io/tcp_io_stream.hpp"
 #include "cppa/io/connection_handle.hpp"
 
 #include "cppa/detail/memory.hpp"
@@ -522,7 +522,7 @@ struct typed_remote_actor_helper<util::type_list<Ts...>> {
         return res;
     }
     return_type operator()(const char* host, std::uint16_t port) {
-        auto ptr = io::ipv4_io_stream::connect_to(host, port);
+        auto ptr = io::tcp_io_stream::connect_to(host, port);
         return (*this)(io::stream_ptr_pair(ptr, ptr));
     }
 };
@@ -596,7 +596,7 @@ void typed_publish(typed_actor<Rs...> whom,
                    std::uint16_t port, const char* addr = nullptr) {
     if (!whom) return;
     detail::publish_impl(detail::raw_access::get(whom),
-                         io::ipv4_acceptor::create(port, addr));
+                         io::tcp_acceptor::create(port, addr));
 }
 
 /**
@@ -630,15 +630,19 @@ typed_remote_actor(const std::string& host, std::uint16_t port) {
 }
 
 /**
- * @brief Spawns an IO actor of type @p Impl.
- * @param args Constructor arguments.
- * @tparam Impl Subtype of {@link io::broker}.
+ * @brief Spawns a new, function-based IO actor.
+ * @param fun  A functor implementing the actor's behavior.
+ * @param in   The actor's input stream.
+ * @param out  The actor's output stream.
+ * @param args Optional arguments for @p fun.
  * @tparam Os Optional flags to modify <tt>spawn</tt>'s behavior.
- * @returns An {@link actor_ptr} to the spawned {@link actor}.
+ * @returns A {@link actor handle} to the spawned actor.
  */
-template<class Impl, spawn_options Os = no_spawn_options, typename... Ts>
-actor spawn_io(Ts&&... args) {
-    auto ptr = make_counted<Impl>(std::forward<Ts>(args)...);
+template<spawn_options Os = no_spawn_options,
+         typename F = std::function<void (io::broker*)>,
+         typename... Ts>
+actor spawn_io(F fun, Ts&&... args) {
+    auto ptr = io::broker::from(std::move(fun), std::forward<Ts>(args)...);
     return {io::init_and_launch(std::move(ptr))};
 }
 
@@ -654,21 +658,22 @@ actor spawn_io(Ts&&... args) {
 template<spawn_options Os = no_spawn_options,
          typename F = std::function<void (io::broker*)>,
          typename... Ts>
-actor spawn_io(F fun,
-               io::input_stream_ptr in,
-               io::output_stream_ptr out,
-               Ts&&... args) {
-    auto ptr = io::broker::from(std::move(fun), std::move(in), std::move(out),
-                                std::forward<Ts>(args)...);
+actor spawn_io_client(F fun,
+                      io::input_stream_ptr in,
+                      io::output_stream_ptr out,
+                      Ts&&... args) {
+    auto hdl = io::connection_handle::from_int(in->read_handle());
+    auto ptr = io::broker::from(std::move(fun), hdl, std::forward<Ts>(args)...);
+    ptr->add_connection(std::move(in), std::move(out));
     return {io::init_and_launch(std::move(ptr))};
 }
 
 template<spawn_options Os = no_spawn_options,
          typename F = std::function<void (io::broker*)>,
          typename... Ts>
-actor spawn_io(F fun, const std::string& host, uint16_t port, Ts&&... args) {
-    auto ptr = io::ipv4_io_stream::connect_to(host.c_str(), port);
-    return spawn_io(std::move(fun), ptr, ptr, std::forward<Ts>(args)...);
+actor spawn_io_client(F fun, const std::string& host, uint16_t port, Ts&&... args) {
+    auto ptr = io::tcp_io_stream::connect_to(host.c_str(), port);
+    return spawn_io_client(std::move(fun), ptr, ptr, std::forward<Ts>(args)...);
 }
 
 template<spawn_options Os = no_spawn_options,
@@ -680,9 +685,9 @@ actor spawn_io_server(F fun, uint16_t port, Ts&&... args) {
     static_assert(is_unbound(Os),
                   "top-level spawns cannot have monitor or link flag");
     using namespace std;
-    auto ptr = io::broker::from(move(fun),
-                                io::ipv4_acceptor::create(port),
-                                forward<Ts>(args)...);
+    auto aptr = io::tcp_acceptor::create(port);
+    auto ptr = io::broker::from(move(fun), forward<Ts>(args)...);
+    ptr->add_acceptor(std::move(aptr));
     return {io::init_and_launch(move(ptr))};
 }
 

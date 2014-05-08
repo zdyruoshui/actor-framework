@@ -28,48 +28,47 @@
 \******************************************************************************/
 
 
-#ifndef IPV4_PEER_ACCEPTOR_HPP
-#define IPV4_PEER_ACCEPTOR_HPP
+#ifndef CPPA_DETAIL_TUPLE_DUMMY_HPP
+#define CPPA_DETAIL_TUPLE_DUMMY_HPP
 
-#include "cppa/actor.hpp"
+#include <typeinfo>
 
-#include "cppa/io/tcp_acceptor.hpp"
-#include "cppa/io/continuable.hpp"
+#include "cppa/util/type_list.hpp"
+#include "cppa/detail/tuple_iterator.hpp"
 
-namespace cppa { namespace io {
+namespace cppa {
+namespace detail {
 
-class default_protocol;
-
-class peer_acceptor : public continuable {
-
-    typedef continuable super;
-
- public:
-
-    typedef std::set<std::string> string_set;
-
-    continue_reading_result continue_reading() override;
-
-    peer_acceptor(middleman* parent,
-                  acceptor_uptr ptr,
-                  const actor_addr& published_actor,
-                  string_set signatures);
-
-    inline const actor_addr& published_actor() const { return m_aa; }
-
-    void dispose() override;
-
-    void io_failed(event_bitmask) override;
-
- private:
-
-    middleman*    m_parent;
-    acceptor_uptr m_ptr;
-    actor_addr    m_aa;
-    string_set    m_sigs;
-
+struct tuple_dummy {
+    typedef util::empty_type_list types;
+    typedef detail::tuple_iterator<tuple_dummy> const_iterator;
+    inline size_t size() const {
+        return 0;
+    }
+    inline void* mutable_at(size_t) {
+        return nullptr;
+    }
+    inline const void* at(size_t) const {
+        return nullptr;
+    }
+    inline const uniform_type_info* type_at(size_t) const {
+        return nullptr;
+    }
+    inline const std::type_info* type_token() const {
+        return &typeid(util::empty_type_list);
+    }
+    inline bool dynamically_typed() const {
+        return false;
+    }
+    inline const_iterator begin() const {
+        return {this};
+    }
+    inline const_iterator end() const {
+        return {this, 0};
+    }
 };
 
-} } // namespace cppa::detail
+} // namespace detail
+} // namespace cppa
 
-#endif // IPV4_PEER_ACCEPTOR_HPP
+#endif // CPPA_DETAIL_TUPLE_DUMMY_HPP

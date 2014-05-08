@@ -39,8 +39,11 @@
 
 #include "cppa/util/buffer.hpp"
 
+#include "cppa/io/stream.hpp"
 #include "cppa/io/acceptor.hpp"
 #include "cppa/io/input_stream.hpp"
+#include "cppa/io/tcp_acceptor.hpp"
+#include "cppa/io/tcp_io_stream.hpp"
 #include "cppa/io/output_stream.hpp"
 #include "cppa/io/accept_handle.hpp"
 #include "cppa/io/connection_handle.hpp"
@@ -82,78 +85,100 @@ class broker : public extend<local_actor>::
 
     friend broker_ptr init_and_launch(broker_ptr);
 
-    broker() = delete;
-
  public:
 
     ~broker();
 
+    /**
+     * @brief Used to configure {@link receive_policy()}.
+     */
     enum policy_flag { at_least, at_most, exactly };
 
-    void enqueue(msg_hdr_cref, any_tuple, execution_unit*) override;
-
-    bool initialized() const;
-
+    /**
+     * @brief Modifies the receive policy for this broker.
+     * @param hdl Identifies the affected connection.
+     * @param policy Sets the policy for given buffer size.
+     * @param buffer_size Sets the minimal, maximum, or exact number of bytes
+     *                    the middleman should read on this connection
+     *                    before sending the next {@link new_data_msg}.
+     */
     void receive_policy(const connection_handle& hdl,
                         broker::policy_flag policy,
                         size_t buffer_size);
 
+    /**
+     * @brief Sends data.
+     */
     void write(const connection_handle& hdl, size_t num_bytes, const void* buf);
 
+    /**
+     * @brief Sends data.
+     */
     void write(const connection_handle& hdl, const util::buffer& buf);
 
+    /**
+     * @brief Sends data.
+     */
     void write(const connection_handle& hdl, util::buffer&& buf);
 
-    template<typename F, typename... Ts>
-    static broker_ptr from(F fun,
-                           input_stream_ptr in,
-                           output_stream_ptr out,
-                           Ts&&... args) {
-        auto hdl = connection_handle::from_int(in->read_handle());
-        return from_impl(std::bind(std::move(fun),
-                                   std::placeholders::_1,
-                                   hdl,
-                                   std::forward<Ts>(args)...),
-                         std::move(in),
-                         std::move(out));
-    }
-
-    static broker_ptr from(std::function<void (broker*)> fun, acceptor_uptr in);
-
-    static broker_ptr from(std::function<behavior (broker*)> fun, acceptor_uptr in);
-
-    template<typename F, typename T0, typename... Ts>
-    static broker_ptr from(F fun, acceptor_uptr in, T0&& arg0, Ts&&... args) {
-        return from(std::bind(std::move(fun),
-                              std::placeholders::_1,
-                              std::forward<T0>(arg0),
-                              std::forward<Ts>(args)...),
-                    std::move(in));
-    }
+    /** @cond PRIVATE */
 
     template<typename F, typename... Ts>
     actor fork(F fun, connection_handle hdl, Ts&&... args) {
-        return this->fork_impl(std::bind(std::move(fun),
-                                         std::placeholders::_1,
-                                         hdl,
-                                         std::forward<Ts>(args)...),
-                               hdl);
-    }
-
-    template<typename F>
-    inline void for_each_connection(F fun) const {
-        for (auto& kvp : m_io) fun(kvp.first);
+        auto f = std::bind(std::move(fun),
+                           std::placeholders::_1,
+                           hdl,
+                           std::forward<Ts>(args)...);
+        // transform to STD function here, because GCC is unable
+        // to select proper overload otherwise ...
+         typedef decltype(f((broker*) nullptr)) fres;
+         std::function<fres(broker*)> stdfun{std::move(f)};
+        return this->fork_impl(std::move(stdfun), hdl);
     }
 
     inline size_t num_connections() const {
         return m_io.size();
     }
 
+    connection_handle add_connection(input_stream_ptr in, output_stream_ptr out);
+
+    inline connection_handle add_connection(stream_ptr sptr) {
+        return add_connection(sptr, sptr);
+    }
+
+    inline connection_handle add_tcp_connection(native_socket_type tcp_sockfd) {
+        return add_connection(tcp_io_stream::from_sockfd(tcp_sockfd));
+    }
+
+    accept_handle add_acceptor(acceptor_uptr ptr);
+
+    inline accept_handle add_tcp_acceptor(native_socket_type tcp_sockfd) {
+        return add_acceptor(tcp_acceptor::from_sockfd(tcp_sockfd));
+    }
+
+    void enqueue(msg_hdr_cref, any_tuple, execution_unit*) override;
+
+    bool initialized() const;
+
+    template<typename F>
+    static broker_ptr from(F fun) {
+        // transform to STD function here, because GCC is unable
+        // to select proper overload otherwise ...
+        typedef decltype(fun((broker*) nullptr)) fres;
+        std::function<fres(broker*)> stdfun{std::move(fun)};
+        return from_impl(std::move(stdfun));
+    }
+
+    template<typename F, typename T, typename... Ts>
+    static broker_ptr from(F fun, T&& v, Ts&&... vs) {
+        return from(std::bind(fun, std::placeholders::_1,
+                              std::forward<T>(v),
+                              std::forward<Ts>(vs)...));
+    }
+
  protected:
 
-    broker(input_stream_ptr in, output_stream_ptr out);
-
-    broker(acceptor_uptr in);
+    broker();
 
     void cleanup(std::uint32_t reason) override;
 
@@ -161,22 +186,21 @@ class broker : public extend<local_actor>::
 
     typedef std::unique_ptr<broker::doorman> doorman_pointer;
 
-    explicit broker(scribe_pointer);
-
     virtual behavior make_behavior() = 0;
+
+    /** @endcond */
 
  private:
 
     actor fork_impl(std::function<void (broker*)> fun,
                     connection_handle hdl);
 
-    static broker_ptr from_impl(std::function<void (broker*)> fun,
-                                input_stream_ptr in,
-                                output_stream_ptr out);
+    actor fork_impl(std::function<behavior (broker*)> fun,
+                    connection_handle hdl);
 
-    static broker_ptr from_impl(std::function<behavior (broker*)> fun,
-                                input_stream_ptr in,
-                                output_stream_ptr out);
+    static broker_ptr from_impl(std::function<void (broker*)> fun);
+
+    static broker_ptr from_impl(std::function<behavior (broker*)> fun);
 
     void invoke_message(msg_hdr_cref hdr, any_tuple msg);
 
@@ -188,35 +212,11 @@ class broker : public extend<local_actor>::
 
     void init_broker();
 
-    connection_handle add_scribe(input_stream_ptr in, output_stream_ptr out);
-
-    accept_handle add_doorman(acceptor_uptr ptr);
-
     std::map<accept_handle, doorman_pointer> m_accept;
     std::map<connection_handle, scribe_pointer> m_io;
 
     policy::not_prioritizing  m_priority_policy;
     policy::sequential_invoke m_invoke_policy;
-
-};
-
-class default_broker : public broker {
-
- public:
-
-    typedef std::function<behavior (broker*)> function_type;
-
-    default_broker(function_type f, input_stream_ptr in, output_stream_ptr out);
-
-    default_broker(function_type f, scribe_pointer ptr);
-
-    default_broker(function_type f, acceptor_uptr ptr);
-
-    behavior make_behavior() override;
-
- private:
-
-    function_type m_fun;
 
 };
 
