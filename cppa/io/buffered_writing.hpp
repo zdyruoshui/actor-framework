@@ -33,6 +33,9 @@
 
 #include <utility>
 
+#include "cppa/logging.hpp"
+#include "cppa/to_string.hpp"
+
 #include "cppa/util/buffer.hpp"
 
 #include "cppa/io/middleman.hpp"
@@ -79,7 +82,7 @@ class buffered_writing : public Base {
         return continue_writing_result::done;
     }
 
-    inline bool has_unwritten_data() const {
+    virtual bool has_unwritten_data() const {
         return m_has_unwritten_data;
     }
 

@@ -99,17 +99,17 @@ class actor_namespace {
     /**
      * @brief Returns the map of known actors for @p node.
      */
-    proxy_map& proxies(node_id& node);
+    proxy_map& proxies(const node_id& node);
 
     /**
      * @brief Deletes all proxies for @p node.
      */
-    void erase(node_id& node);
+    void erase(const node_id& node);
 
     /**
      * @brief Deletes the proxy with id @p aid for @p node.
      */
-    void erase(node_id& node, actor_id aid);
+    void erase(const node_id& node, actor_id aid);
 
  private:
 

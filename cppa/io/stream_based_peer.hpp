@@ -28,94 +28,84 @@
 \******************************************************************************/
 
 
-#ifndef CPPA_peer_IMPL_HPP
-#define CPPA_peer_IMPL_HPP
+#ifndef STREAM_BASED_PEER_HPP
+#define STREAM_BASED_PEER_HPP
 
-#include <map>
-#include <cstdint>
+#include "cppa/io/peer.hpp"
 
-#include "cppa/extend.hpp"
-#include "cppa/node_id.hpp"
-#include "cppa/actor_proxy.hpp"
-#include "cppa/partial_function.hpp"
-#include "cppa/type_lookup_table.hpp"
-#include "cppa/weak_intrusive_ptr.hpp"
+namespace cppa {
+namespace io {
 
-#include "cppa/util/buffer.hpp"
+class stream_based_peer : extend<peer>::with<buffered_writing> {
 
-#include "cppa/io/input_stream.hpp"
-#include "cppa/io/output_stream.hpp"
-#include "cppa/io/buffered_writing.hpp"
-#include "cppa/io/default_message_queue.hpp"
-
-namespace cppa { namespace io {
-
-class middleman_impl;
-
-class peer : public continuable {
+    typedef combined_type super;
 
     friend class middleman_impl;
 
-    typedef continuable super;
-
  public:
 
-    virtual void enqueue(msg_hdr_cref hdr, const any_tuple& msg) = 0;
+    stream_based_peer(middleman* parent,
+                      const input_stream_ptr& in,
+                      const output_stream_ptr& out,
+                      node_id_ptr peer_ptr = nullptr);
 
-    inline bool stop_on_last_proxy_exited() const {
-        return m_stop_on_last_proxy_exited;
-    }
+    void enqueue(msg_hdr_cref hdr, const any_tuple& msg) override;
 
-    inline const node_id& node() const {
-        return *m_node;
-    }
+    continue_reading_result continue_reading() override;
 
-    inline bool has_node() const {
-        return static_cast<bool>(m_node);
-    }
+    continue_writing_result continue_writing() override;
 
-    void set_node(node_id_ptr ptr) {
-        m_node = std::move(ptr);
-    }
+    void dispose() override;
 
-    virtual bool has_unwritten_data() const = 0;
+    void io_failed(event_bitmask mask) override;
 
     inline void enqueue(const any_tuple& msg) {
         enqueue({invalid_actor_addr, nullptr}, msg);
     }
 
- protected:
-
-    peer(native_socket_type read_fd,
-         native_socket_type write_fd = invalid_socket,
-         node_id_ptr peer_ptr = nullptr);
-
-    inline default_message_queue& queue() {
-        CPPA_REQUIRE(m_queue != nullptr);
-        return *m_queue;
-    }
-
-    inline void stop_on_last_proxy_exited(bool value) {
-        m_stop_on_last_proxy_exited = value;
-    }
-
  private:
 
-    // called by middleman_impl
-    inline void set_queue(const default_message_queue_ptr& queue) {
-        m_queue = queue;
-    }
+    enum read_state {
+        // connection just established; waiting for process information
+        wait_for_process_info,
+        // wait for the size of the next message
+        wait_for_msg_size,
+        // currently reading a message
+        read_message
+    };
 
-    // if this peer was created using remote_actor(), then m_doorman will
-    // point to the published actor of the remote node
-    bool m_stop_on_last_proxy_exited;
+    input_stream_ptr m_in;
+    read_state m_state;
 
-    node_id_ptr m_node;
 
-    default_message_queue_ptr m_queue;
+    const uniform_type_info* m_meta_hdr;
+    const uniform_type_info* m_meta_msg;
+
+    util::buffer m_rd_buf;
+    util::buffer m_wr_buf;
+
+    partial_function m_content_handler;
+
+    type_lookup_table m_incoming_types;
+    type_lookup_table m_outgoing_types;
+
+    void monitor(const actor_addr& sender, const node_id_ptr& node, actor_id aid);
+
+    void kill_proxy(const actor_addr& sender, const node_id_ptr& node, actor_id aid, std::uint32_t reason);
+
+    void link(const actor_addr& sender, const actor_addr& ptr);
+
+    void unlink(const actor_addr& sender, const actor_addr& ptr);
+
+    void deliver(msg_hdr_cref hdr, any_tuple msg);
+
+    void enqueue_impl(msg_hdr_cref hdr, const any_tuple& msg);
+
+    void add_type_if_needed(const std::string& tname);
 
 };
 
-} } // namespace cppa::network
+} // namespace io
+} // namespace cppa
 
-#endif // CPPA_peer_IMPL_HPP
+#endif // STREAM_BASED_PEER_HPP

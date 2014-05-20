@@ -60,6 +60,7 @@
 #include "cppa/io/input_stream.hpp"
 #include "cppa/io/output_stream.hpp"
 #include "cppa/io/peer_acceptor.hpp"
+#include "cppa/io/stream_based_peer.hpp"
 #include "cppa/io/remote_actor_proxy.hpp"
 #include "cppa/io/default_message_queue.hpp"
 #include "cppa/io/middleman_event_handler.hpp"
@@ -258,7 +259,7 @@ class middleman_impl : public middleman {
                   const output_stream_ptr& out,
                   const node_id_ptr& node = nullptr) override {
         CPPA_LOG_TRACE("");
-        auto ptr = new peer(this, in, out, node);
+        auto ptr = new stream_based_peer(this, in, out, node);
         continue_reader(ptr);
         if (node) register_peer(*node, ptr);
     }

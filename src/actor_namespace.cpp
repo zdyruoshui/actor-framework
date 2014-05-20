@@ -132,16 +132,16 @@ void actor_namespace::put(const node_id& node,
     }
 }
 
-auto actor_namespace::proxies(node_id& node) -> proxy_map& {
+auto actor_namespace::proxies(const node_id& node) -> proxy_map& {
     return m_proxies[node];
 }
 
-void actor_namespace::erase(node_id& inf) {
+void actor_namespace::erase(const node_id& inf) {
     CPPA_LOG_TRACE(CPPA_TARG(inf, to_string));
     m_proxies.erase(inf);
 }
 
-void actor_namespace::erase(node_id& inf, actor_id aid) {
+void actor_namespace::erase(const node_id& inf, actor_id aid) {
     CPPA_LOG_TRACE(CPPA_TARG(inf, to_string) << ", " << CPPA_ARG(aid));
     auto i = m_proxies.find(inf);
     if (i != m_proxies.end()) {
