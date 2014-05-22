@@ -215,6 +215,7 @@ set(LIBCPPA_SRC
     src/stream.cpp
     src/string_serialization.cpp
     src/stream_based_peer.cpp
+    src/transaction_based_peer.cpp
     src/sync_request_bouncer.cpp
     src/tcp_acceptor.cpp
     src/tcp_io_stream.cpp
@@ -255,6 +256,13 @@ if (ENABLE_OPENCL)
       src/opencl/opencl_metainfo.cpp)
   add_definitions(-DCPPA_OPENCL)
 endif (ENABLE_OPENCL)
+
+if (ENABLE_COAP)
+    find_package(COAP REQUIRED)
+    set(LD_FLAGS ${LD_FLAGS} ${COAP_LIBRARIES})
+    set(INCLUDE_DIRS ${INCLUDE_DIRS} ${COAP_INCLUDE_DIRS})
+    add_definitions(-DCPPA_COAP)
+endif (ENABLE_COAP)
 
 if (DISABLE_MEM_MANAGEMENT)
   add_definitions(-DCPPA_DISABLE_MEM_MANAGEMENT)
@@ -429,6 +437,7 @@ endmacro ()
 toYesNo(ENABLE_DEBUG DEBUG_MODE_STR)
 toYesNo(ENABLE_OPENCL BUILD_OPENCL_STR)
 toYesNo(DISABLE_MEM_MANAGEMENT DISABLE_MEM_MANAGEMENT_STR)
+toYesNo(ENABLE_COAP BUILD_COAP_STR)
 invertYesNo(CPPA_NO_EXAMPLES BUILD_EXAMPLES)
 invertYesNo(CPPA_NO_UNIT_TESTS BUILD_UNIT_TESTS)
 invertYesNo(DISABLE_MEM_MANAGEMENT_STR WITH_MEM_MANAGEMENT)
@@ -458,6 +467,7 @@ message("\n====================|  Build Summary  |===================="
         "\nBuild static:      ${CPPA_BUILD_STATIC}"
         "\nBulid static only: ${CPPA_BUILD_STATIC_ONLY}"
         "\nBuild OpenCL:      ${BUILD_OPENCL_STR}"
+        "\nBuild CoAP:        ${BUILD_COAP_STR}"
         "\nWith mem. mgmt.:   ${WITH_MEM_MANAGEMENT}"
         "\n"
         "\nCXX:               ${CMAKE_CXX_COMPILER}"

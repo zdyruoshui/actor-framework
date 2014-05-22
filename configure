@@ -55,6 +55,8 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
                                   - DEBUG
                                   - TRACE
                                 (implicitly sets --enable-debug)
+    --enable-coap               use coap for message exchange between actors 
+                                (requires libcoap: http://libcoap.sourceforge.net)
 
   Platform-Dependent Adjustments:
     --disable-context-switching compile libcppa without context-switching actors
@@ -188,6 +190,9 @@ while [ $# -ne 0 ]; do
             ;;
         --with-opencl)
             append_cache_entry ENABLE_OPENCL BOOL true
+            ;;
+        --enable-coap)
+            append_cache_entry ENABLE_COAP BOOL true
             ;;
         --without-memory-management)
             append_cache_entry DISABLE_MEM_MANAGEMENT BOOL true
