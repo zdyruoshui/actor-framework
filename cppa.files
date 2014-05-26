@@ -364,4 +364,8 @@ src/ip_udp_acceptor.cpp
 cppa/io/ip_udp_io_stream.hpp
 src/ip_udp_io_stream.cpp
 cppa/io/stream_based_peer.hpp
+cppa/io/transaction_based_peer.hpp
 src/stream_based_peer.cpp
+src/transaction_based_peer.cpp
+cppa/io/coap_client_wrapper.hpp
+src/coap_client_wrapper.cpp
