@@ -13,11 +13,11 @@ message("-- Looking for CoAP")
 
 find_path(COAP_INCLUDE_DIR 
     NAMES coap.h 
-    PATHS ENV ../libcoap/
+    PATHS ENV ../libcoap/ ${COAP_ROOT}
 )
 find_library(COAP_LIBRARIES
     NAMES libcoap.a 
-    PATHS ENV LD_LIBRARY_PATH ../libcoap/
+    PATHS ENV LD_LIBRARY_PATH ../libcoap/ ${COAP_ROOT}
 )
 #message("coap_libraries: ${COAP_LIBRARIES}")
 
