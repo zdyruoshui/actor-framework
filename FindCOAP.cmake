@@ -2,36 +2,27 @@
 # Once done this will define
 #  
 #  COAP_FOUND        - system has coap
-#  COAP_INCLUDE_DIR  - the coap include directory
+#  COAP_INCLUDE_DIRS - the coap include directory
 #  COAP_LIBRARIES    - link these to use coap
 #
 
-# Unix style platforms
-
-#message(***** COAP_INCLUDE_DIR: "${COAP_INCLUDE_DIR}" ********)
-message("-- Looking for CoAP")
-
+# include dir
 find_path(COAP_INCLUDE_DIR 
-    NAMES coap.h 
-    PATHS ENV ../libcoap/ ${COAP_ROOT}
+    NAMES coap.h
+    PATHS ENV ../libcoap/ ~/libcoap/ ~/Git/libcoap/ ${COAP_ROOT}
 )
-find_library(COAP_LIBRARIES
+
+#library dir
+find_library(COAP_LIBRARY
     NAMES libcoap.a 
     PATHS ENV LD_LIBRARY_PATH ../libcoap/ ${COAP_ROOT}
 )
-#message("coap_libraries: ${COAP_LIBRARIES}")
 
-#message(***** COAP ENV: "$ENV{GPU_SDK}" ********)
+set(COAP_INCLUDE_DIRS ${COAP_INCLUDE_DIR} )
+set(COAP_LIBRARIES ${COAP_LIBRARY} )
 
-SET( COAP_FOUND "NO" )
-IF(COAP_LIBRARIES )
-    SET( COAP_FOUND "YES" )
-    message("-- Looking for CoAP -- found")
-ELSE()
-    message("-- Looking for CoAP -- not found")
-ENDIF(COAP_LIBRARIES)
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(libcoap DEFAULT_MSG COAP_INCLUDE_DIR COAP_LIBRARY)
 
-MARK_AS_ADVANCED(
-  COAP_INCLUDE_DIR
-)
+mark_as_advanced(COAP_INCLUDE_DIR COAP_LIBRARY )
 

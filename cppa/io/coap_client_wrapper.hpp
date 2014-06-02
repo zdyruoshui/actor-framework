@@ -62,6 +62,30 @@ class coap_client_wrapper {
         char *media_type;
     };
 
+ public:
+
+    /**
+     * @brief Returns the internal file descriptor. This descriptor is needed
+     *        for socket multiplexing using select().
+     */
+    virtual native_socket_type write_handle() const = 0;
+
+    /**
+     * @brief Writes @p num_bytes bytes from @p buf to the data sink.
+     * @note This member function blocks until @p num_bytes were successfully
+     *       written.
+     * @throws std::ios_base::failure
+     */
+    virtual void write(const void* buf, size_t num_bytes) = 0;
+
+    /**
+     * @brief Tries to write up to @p num_bytes bytes from @p buf.
+     * @returns The number of written bytes.
+     * @throws std::ios_base::failure
+     */
+    virtual size_t write_some(const void* buf, size_t num_bytes) = 0;
+
+
  private:
 
     coap_client_wrapper();
@@ -69,11 +93,18 @@ class coap_client_wrapper {
     int append_to_output(const unsigned char* data, size_t len);
     void close_output();
     coap_pdu_t* new_ack(coap_context_t* ctx, coap_queue_t* node);
-    coap_pdu_t* new_response(coap_context_t* ctx, coap_queue_t* node, unsigned int code);
-    coap_pdu_t* coap_new_request(coap_context_t* ctx, method_t m, coap_list_t* options);
-    coap_tid_t clear_obs(coap_context_t* ctx, const coap_address_t* remote);
-    int resolve_address(const str* server, struct sockaddr* dst);
-    static inline coap_opt_t* get_block(coap_pdu_t* pdu, coap_opt_iterator_t* opt_iter);
+    coap_pdu_t* new_response(coap_context_t* ctx,
+                             coap_queue_t* node,
+                             unsigned int code);
+    coap_pdu_t* coap_new_request(coap_context_t* ctx,
+                                 method_t m,
+                                 coap_list_t* options);
+    coap_tid_t clear_obs(coap_context_t* ctx,
+                         const coap_address_t* remote);
+    int resolve_address(const str* server,
+                        struct sockaddr* dst);
+    static inline coap_opt_t* get_block(coap_pdu_t* pdu,
+                                        coap_opt_iterator_t* opt_iter);
     inline int check_token(coap_pdu_t* received);
     void message_handler(struct coap_context_t  *ctx, 
                          const coap_address_t *remote,
@@ -82,7 +113,9 @@ class coap_client_wrapper {
                          const coap_tid_t id);
     int join(coap_context_t* ctx, char* group_name);
     int order_opts(void* a, void* b);
-    coap_list_t* new_option_node(unsigned short key, unsigned int length, unsigned char *data);
+    coap_list_t* new_option_node(unsigned short key,
+                                 unsigned int length,
+                                 unsigned char *data);
 //    void cmdline_content_type(char *arg, unsigned short key);
 //    void cmdline_uri(char *arg);
 //    int cmdline_blocksize(char *arg);
@@ -91,15 +124,20 @@ class coap_client_wrapper {
 //    int cmdline_proxy(char *arg);
 //    inline void cmdline_token(char *arg);
 //    void cmdline_option(char *arg);
-////    extern int  check_segment(const unsigned char *s, size_t length);
-////    extern void decode_segment(const unsigned char *seg, size_t length, unsigned char *buf);
+////    extern int  check_segment(const unsigned char *s,
+////                              size_t length);
+////    extern void decode_segment(const unsigned char *seg,
+////                               size_t length,
+////                               unsigned char *buf);
 //    int cmdline_input(char *text, str *buf);
 //    int cmdline_input_from_file(char *filename, str *buf);
     method_t cmdline_method(char* arg);
-    coap_context_t* get_context(const char* node, const char* port);
+    coap_context_t* get_context(const char* node,
+                                const char* port);
 
     // found outside of main (mostly static)
-    std::string m_token; // unsigned char _token_data[8]; the_token = { 0, _token_data };
+    // unsigned char _token_data[8]; the_token = { 0, _token_data };
+    std::string m_token;
     coap_list_t* m_optlist;
     coap_uri_t m_uri; // Request URI
     std::string m_proxy;

@@ -359,13 +359,11 @@ unit_testing/test_typed_remote_actor.cpp
 unit_testing/test_typed_spawn.cpp
 unit_testing/test_uniform_type.cpp
 unit_testing/test_yield_interface.cpp
-cppa/io/ip_udp_acceptor.hpp
-src/ip_udp_acceptor.cpp
-cppa/io/ip_udp_io_stream.hpp
-src/ip_udp_io_stream.cpp
 cppa/io/stream_based_peer.hpp
 cppa/io/transaction_based_peer.hpp
 src/stream_based_peer.cpp
 src/transaction_based_peer.cpp
 cppa/io/coap_client_wrapper.hpp
 src/coap_client_wrapper.cpp
+cppa/io/coap_util.hpp
+src/coap_util.cpp
