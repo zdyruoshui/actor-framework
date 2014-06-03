@@ -45,11 +45,8 @@ transaction_based_peer::transaction_based_peer(middleman* parent,
                                                node_id_ptr peer_ptr)
         : super{ctx->sockfd, ctx->sockfd, peer_ptr}
         , m_parent{parent}
-        , m_ctx{ctx}
         , m_state{(peer_ptr) ? wait_for_msg_size : wait_for_process_info}
-        , m_the_token{0, m_token_data}
-        , m_block{ .num = 0, .m = 0, .szx = 6 }
-        , m_flags{0} {
+        , coap{ctx} {
     m_rd_buf.final_size( m_state == wait_for_process_info
                        ? sizeof(uint32_t) + node_id::host_id_size
                        : sizeof(uint32_t));
@@ -58,6 +55,9 @@ transaction_based_peer::transaction_based_peer(middleman* parent,
     // stop_on_last_proxy_exited(m_state == wait_for_msg_size);
     m_meta_hdr = uniform_typeid<message_header>();
     m_meta_msg = uniform_typeid<any_tuple>();
+
+    coap_register_option(ctx, COAP_OPTION_BLOCK2);
+    coap_register_response_handler(ctx, message_handler);
 }
   
 void transaction_based_peer::io_failed(event_bitmask mask) {
@@ -366,15 +366,67 @@ void transaction_based_peer::enqueue(msg_hdr_cref hdr, const any_tuple& msg) {
 }
 
 void transaction_based_peer::dispose() {
-    CPPA_LOG_TRACE(CPPA_ARG(this));
-    m_parent->get_namespace().erase(node());
-    m_parent->del_peer(this);
-    delete this;
+//    CPPA_LOG_TRACE(CPPA_ARG(this));
+//    m_parent->get_namespace().erase(node());
+//    m_parent->del_peer(this);
+//    delete this;
 }
 
-int send_coap_message(msg_hdr_cref hdr, const any_tuple& msg, int type) {
-    coap_pdu_t* pdu =
+int transaction_based_peer::send_coap_message(coap_address_t& dst,
+                                              void* data, size_t size,
+                                              coap_list_t* options,
+                                              int type, method_t method) {
+    coap_pdu_t *pdu;
+    coap_list_t *opt;
 
+    if (!(pdu = coap_new_pdu())) {
+        throw std::runtime_error("failed to create coap pdu");
+    }
+
+    pdu->hdr->type = msgtype;
+    pdu->hdr->id = coap_new_message_id(m_coap_scope.ctx);
+    pdu->hdr->code = method;
+
+    pdu->hdr->token_length = m_coap_scope.the_token.length;
+    if (!coap_add_token(pdu, m_coap_scope.the_token.length, m_coap_scope.the_token.s)) {
+      debug("cannot add token to request\n");
+    }
+
+    coap_show_pdu(pdu);
+
+    for (opt = options; opt; opt = opt->next) {
+      coap_add_option(pdu,
+                      COAP_OPTION_KEY(*(coap_option *)opt->data),
+                      COAP_OPTION_LENGTH(*(coap_option *)opt->data),
+                      COAP_OPTION_DATA(*(coap_option *)opt->data));
+    }
+
+    if (size > 0) {
+      if ((m_coap_scope.flags & FLAGS_BLOCK) == 0) {
+          coap_add_data(pdu, size, (unsigned char *) data);
+      }
+      else {
+          coap_add_block(pdu, size, (unsigned char *) data,
+                         m_coap_scope.block.num, m_coap_scope.block.szx);
+      }
+    }
+
+    coap_tid_t tid;
+    if (type == COAP_MESSAGE_CON) {
+        tid = coap_send_confirmed(m_coap_scope.ctx, &dst, pdu);
+    }
+    else {
+      tid = coap_send(m_coap_scope.ctx, &dst, pdu);
+    }
+    if (pdu->hdr->type != COAP_MESSAGE_CON || tid == COAP_INVALID_TID) {
+        coap_delete_pdu(pdu);
+    }
+    else {
+        coap_tick_t timeout;
+        coap_ticks(&timeout);
+        timeout += wait_seconds * COAP_TICKS_PER_SECOND;
+        m_requests.emplace(pdu->hdr->id, coap_request{tid, pdu, timeout});
+    }
 }
 
 } // namespace io

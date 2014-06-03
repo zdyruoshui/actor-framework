@@ -31,6 +31,7 @@
 #ifndef TRANSACTION_BASED_PEER_HPP
 #define TRANSACTION_BASED_PEER_HPP
 
+#include <map>
 #include <memory>
 
 #include "coap.h"
@@ -48,6 +49,12 @@ class transaction_based_peer : peer {
     using super = peer;
 
     friend class middleman_impl;
+
+    struct coap_request {
+        coap_tid_t tid;
+        coap_pdu_t* pdu;
+        coap_tick_t timeout;
+    };
     
  public:
  
@@ -81,10 +88,8 @@ class transaction_based_peer : peer {
     };
 
     middleman* m_parent;
-    coap_context_t* m_ctx;
-    
-    read_state m_state;
 
+    read_state m_state;
 
     const uniform_type_info* m_meta_hdr;
     const uniform_type_info* m_meta_msg;
@@ -96,6 +101,9 @@ class transaction_based_peer : peer {
 
     type_lookup_table m_incoming_types;
     type_lookup_table m_outgoing_types;
+
+    coap_scope m_coap_scope;
+    std::map<unsigned short,coap_request> m_requests;
 
     void monitor(const actor_addr& sender, const node_id_ptr& node, actor_id aid);
 
@@ -111,14 +119,10 @@ class transaction_based_peer : peer {
 
     void add_type_if_needed(const std::string& tname);
 
-    int send_coap_message_with_type(msg_hdr_cref hdr, const any_tuple& msg, int type);
+    int send_coap_message(coap_address_t &dst, void* data, size_t size,
+                          coap_list_t* options,
+                          int type, method_t method);
 
-    coap_pdu_t* coap_new_request(coap_context_t *ctx, method_t m, coap_list_t *options);
-
-    static unsigned char m_token_data[8];
-    str m_the_token;
-    coap_block_t m_block;
-    int m_flags;
 
 };
 

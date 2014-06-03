@@ -216,6 +216,7 @@ set(LIBCPPA_SRC
     src/string_serialization.cpp
     src/stream_based_peer.cpp
     src/transaction_based_peer.cpp
+    src/coap_util.cpp
     src/sync_request_bouncer.cpp
     src/tcp_acceptor.cpp
     src/tcp_io_stream.cpp
