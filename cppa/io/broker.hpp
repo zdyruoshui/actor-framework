@@ -9,27 +9,16 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_BROKER_HPP
-#define CPPA_BROKER_HPP
+#ifndef CPPA_IO_BROKER_HPP
+#define CPPA_IO_BROKER_HPP
 
 #include <map>
 
@@ -158,8 +147,6 @@ class broker : public extend<local_actor>::
 
     void enqueue(msg_hdr_cref, any_tuple, execution_unit*) override;
 
-    bool initialized() const;
-
     template<typename F>
     static broker_ptr from(F fun) {
         // transform to STD function here, because GCC is unable
@@ -186,9 +173,11 @@ class broker : public extend<local_actor>::
 
     typedef std::unique_ptr<broker::doorman> doorman_pointer;
 
-    virtual behavior make_behavior() = 0;
+    bool initialized() const;
 
     /** @endcond */
+
+    virtual behavior make_behavior() = 0;
 
  private:
 
@@ -210,17 +199,17 @@ class broker : public extend<local_actor>::
 
     void erase_acceptor(int id);
 
-    void init_broker();
-
     std::map<accept_handle, doorman_pointer> m_accept;
     std::map<connection_handle, scribe_pointer> m_io;
 
     policy::not_prioritizing  m_priority_policy;
     policy::sequential_invoke m_invoke_policy;
 
+    bool m_initialized;
+
 };
 
 } // namespace io
 } // namespace cppa
 
-#endif // CPPA_BROKER_HPP
+#endif // CPPA_IO_BROKER_HPP

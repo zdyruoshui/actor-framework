@@ -9,7 +9,7 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
+ * Copyright (C) 2011-2014                                                    *
  * Joachim Schiele <js@lastlog.de>                                            *
  * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
  *                                                                            *
@@ -78,6 +78,7 @@
 #ifdef __clang__
 #   pragma clang diagnostic ignored "-Wshorten-64-to-32"
 #   pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#   pragma clang diagnostic ignored "-Wunused-const-variable"
 #endif // __clang__
 
 using namespace cppa;

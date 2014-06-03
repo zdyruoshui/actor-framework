@@ -9,34 +9,24 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_DURATION_HPP
-#define CPPA_DURATION_HPP
+#ifndef CPPA_UTIL_DURATION_HPP
+#define CPPA_UTIL_DURATION_HPP
 
 #include <string>
 #include <chrono>
 #include <cstdint>
 #include <stdexcept>
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 /**
  * @brief SI time units to specify timeouts.
@@ -72,7 +62,7 @@ template<> struct ratio_to_time_unit_helper<60, 1> {
 
 /**
  * @brief Converts an STL time period to a
- *        {@link cppa::util::time_unit time_unit}.
+ *        {@link time_unit time_unit}.
  */
 template<typename Period>
 constexpr time_unit get_time_unit_from_period() {
@@ -80,7 +70,7 @@ constexpr time_unit get_time_unit_from_period() {
 }
 
 /**
- * @brief Time duration consisting of a {@link cppa::util::time_unit time_unit}
+ * @brief Time duration consisting of a {@link time_unit time_unit}
  *        and a 64 bit unsigned integer.
  */
 class duration {
@@ -161,32 +151,32 @@ inline bool operator!=(const duration& lhs, const duration& rhs) {
     return !(lhs == rhs);
 }
 
-} } // namespace cppa::util
-
 /**
- * @relates cppa::util::duration
+ * @relates duration
  */
 template<class Clock, class Duration>
 std::chrono::time_point<Clock, Duration>&
-operator+=(std::chrono::time_point<Clock, Duration>& lhs,
-           const cppa::util::duration& rhs) {
+operator+=(std::chrono::time_point<Clock, Duration>& lhs, const duration& rhs) {
     switch (rhs.unit) {
-        case cppa::util::time_unit::seconds:
+        case time_unit::seconds:
             lhs += std::chrono::seconds(rhs.count);
             break;
 
-        case cppa::util::time_unit::milliseconds:
+        case time_unit::milliseconds:
             lhs += std::chrono::milliseconds(rhs.count);
             break;
 
-        case cppa::util::time_unit::microseconds:
+        case time_unit::microseconds:
             lhs += std::chrono::microseconds(rhs.count);
             break;
 
-        case cppa::util::time_unit::invalid:
+        case time_unit::invalid:
             break;
     }
     return lhs;
 }
 
-#endif // CPPA_DURATION_HPP
+} // namespace util
+} // namespace cppa
+
+#endif // CPPA_UTIL_DURATION_HPP

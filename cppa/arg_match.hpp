@@ -17,12 +17,17 @@
 \******************************************************************************/
 
 
-#include "cppa/memory_managed.hpp"
+#ifndef CPPA_ARG_MATCH_HPP
+#define CPPA_ARG_MATCH_HPP
+
+#include "cppa/util/wrapped.hpp"
 
 namespace cppa {
 
-memory_managed::~memory_managed() { }
+struct arg_match_t { };
 
-void memory_managed::request_deletion() { delete this; }
+constexpr util::wrapped<arg_match_t> arg_match = util::wrapped<arg_match_t>{};
 
 } // namespace cppa
+
+#endif // CPPA_ARG_MATCH_HPP

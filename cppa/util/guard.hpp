@@ -28,10 +28,11 @@
 \******************************************************************************/
 
 
-#ifndef GUARD_HPP
-#define GUARD_HPP
+#ifndef CPPA_UTIL_GUARD_HPP
+#define CPPA_UTIL_GUARD_HPP
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 template<typename T>
 struct guard {
@@ -42,6 +43,7 @@ struct guard {
 
 };
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
 
-#endif // GUARD_HPP
+#endif // CPPA_UTIL_GUARD_HPP

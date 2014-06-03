@@ -1,3 +1,22 @@
+/******************************************************************************\
+ *           ___        __                                                    *
+ *          /\_ \    __/\ \                                                   *
+ *          \//\ \  /\_\ \ \____    ___   _____   _____      __               *
+ *            \ \ \ \/\ \ \ '__`\  /'___\/\ '__`\/\ '__`\  /'__`\             *
+ *             \_\ \_\ \ \ \ \L\ \/\ \__/\ \ \L\ \ \ \L\ \/\ \L\.\_           *
+ *             /\____\\ \_\ \_,__/\ \____\\ \ ,__/\ \ ,__/\ \__/.\_\          *
+ *             \/____/ \/_/\/___/  \/____/ \ \ \/  \ \ \/  \/__/\/_/          *
+ *                                          \ \_\   \ \_\                     *
+ *                                           \/_/    \/_/                     *
+ *                                                                            *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
+ *                                                                            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
+\******************************************************************************/
+
+
 #ifndef NO_RESUME_HPP
 #define NO_RESUME_HPP
 
@@ -8,13 +27,11 @@
 #include "cppa/exit_reason.hpp"
 #include "cppa/policy/resume_policy.hpp"
 
-namespace cppa {
-namespace detail {
-struct cs_thread;
-} // namespace detail
-} // namespace cppa
+namespace cppa { namespace detail { struct cs_thread; } }
 
-namespace cppa { namespace policy {
+
+namespace cppa {
+namespace policy {
 
 // this policy simply forwards calls to @p await_data to the scheduling
 // policy and throws an exception whenever @p resume is called;
@@ -70,6 +87,7 @@ class no_resume {
 
 };
 
-} } // namespace cppa::policy
+} // namespace policy
+} // namespace cppa
 
 #endif // NO_RESUME_HPP

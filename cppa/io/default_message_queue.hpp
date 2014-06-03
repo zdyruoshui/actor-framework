@@ -9,27 +9,16 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_MESSAGE_QUEUE_HPP
-#define CPPA_MESSAGE_QUEUE_HPP
+#ifndef CPPA_IO_DEFAULT_MESSAGE_QUEUE_HPP
+#define CPPA_IO_DEFAULT_MESSAGE_QUEUE_HPP
 
 #include <vector>
 
@@ -37,7 +26,8 @@
 #include "cppa/ref_counted.hpp"
 #include "cppa/message_header.hpp"
 
-namespace cppa { namespace io {
+namespace cppa {
+namespace io {
 
 class default_message_queue : public ref_counted {
 
@@ -70,8 +60,7 @@ class default_message_queue : public ref_counted {
 
 typedef intrusive_ptr<default_message_queue> default_message_queue_ptr;
 
-} } // namespace cppa::network
+} // namespace io
+} // namespace cppa
 
-
-
-#endif // CPPA_MESSAGE_QUEUE_HPP
+#endif // CPPA_IO_DEFAULT_MESSAGE_QUEUE_HPP

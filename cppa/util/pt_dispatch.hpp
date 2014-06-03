@@ -9,32 +9,22 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_PT_DISPATCH_HPP
-#define CPPA_PT_DISPATCH_HPP
+#ifndef CPPA_UTIL_PT_DISPATCH_HPP
+#define CPPA_UTIL_PT_DISPATCH_HPP
 
 #include "cppa/primitive_type.hpp"
 #include "cppa/util/pt_token.hpp"
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 /**
  * @brief Creates a {@link pt_token} from the runtime value @p ptype
@@ -63,6 +53,8 @@ void pt_dispatch(primitive_type ptype, Fun&& f) {
     }
 }
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
 
-#endif // CPPA_PT_DISPATCH_HPP
+
+#endif // CPPA_UTIL_PT_DISPATCH_HPP

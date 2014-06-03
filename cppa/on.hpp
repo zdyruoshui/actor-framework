@@ -9,22 +9,11 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
@@ -38,6 +27,7 @@
 #include "cppa/unit.hpp"
 #include "cppa/atom.hpp"
 #include "cppa/anything.hpp"
+#include "cppa/arg_match.hpp"
 #include "cppa/any_tuple.hpp"
 #include "cppa/guard_expr.hpp"
 #include "cppa/match_expr.hpp"
@@ -47,7 +37,6 @@
 
 #include "cppa/util/duration.hpp"
 #include "cppa/util/type_list.hpp"
-#include "cppa/util/arg_match_t.hpp"
 #include "cppa/util/type_traits.hpp"
 
 #include "cppa/detail/boxed.hpp"
@@ -55,7 +44,8 @@
 #include "cppa/detail/value_guard.hpp"
 #include "cppa/detail/implicit_conversions.hpp"
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 template<bool IsFun, typename T>
 struct add_ptr_to_fun_ { typedef T* type; };
@@ -127,7 +117,7 @@ struct rvalue_builder {
     typedef typename util::tl_back<Pattern>::type back_type;
 
     static constexpr bool is_complete =
-            !std::is_same<util::arg_match_t, back_type>::value;
+            !std::is_same<arg_match_t, back_type>::value;
 
     typedef typename util::tl_apply<Transformers, tdata>::type fun_container;
 
@@ -218,7 +208,8 @@ struct pattern_type : pattern_type_<util::is_callable<T>::value && !detail::is_b
 };
 
 
-} } // cppa::detail
+} // namespace detail
+} // namespace cppa
 
 namespace cppa {
 
@@ -293,9 +284,9 @@ constexpr typename detail::boxed<T>::type val() {
     return typename detail::boxed<T>::type();
 }
 
-typedef typename detail::boxed<util::arg_match_t>::type boxed_arg_match_t;
+typedef typename detail::boxed<arg_match_t>::type boxed_arg_match_t;
 
-constexpr boxed_arg_match_t arg_match = boxed_arg_match_t();
+//constexpr boxed_arg_match_t arg_match = boxed_arg_match_t();
 
 template<typename T, typename... Ts>
 detail::rvalue_builder<

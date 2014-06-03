@@ -9,22 +9,11 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
@@ -46,7 +35,8 @@
 #include "cppa/detail/type_to_ptype.hpp"
 #include "cppa/detail/ptype_to_type.hpp"
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 template<primitive_type FT, class T, class V>
 void ptv_set(primitive_type& lhs_type, T& lhs, V&& rhs,
@@ -56,7 +46,8 @@ template<primitive_type FT, class T, class V>
 void ptv_set(primitive_type& lhs_type, T& lhs, V&& rhs,
              typename std::enable_if<std::is_arithmetic<T>::value, int>::type* = 0);
 
-} } // namespace cppa::detail
+} // namespace detail
+} // namespace cppa
 
 namespace cppa {
 
@@ -353,7 +344,8 @@ inline bool equal(const primitive_variant& lhs, const T& rhs) {
 
 } // namespace cppa
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 template<primitive_type FT, class T, class V>
 void ptv_set(primitive_type& lhs_type, T& lhs, V&& rhs,
@@ -375,7 +367,7 @@ void ptv_set(primitive_type& lhs_type, T& lhs, V&& rhs,
     lhs_type = FT;
 }
 
-} } // namespace cppa::detail
-
+} // namespace detail
+} // namespace cppa
 
 #endif // CPPA_PRIMITIVE_VARIANT_HPP

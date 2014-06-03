@@ -9,27 +9,16 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_ABSTRACT_UNIFORM_TYPE_INFO_HPP
-#define CPPA_ABSTRACT_UNIFORM_TYPE_INFO_HPP
+#ifndef CPPA_UTIL_ABSTRACT_UNIFORM_TYPE_INFO_HPP
+#define CPPA_UTIL_ABSTRACT_UNIFORM_TYPE_INFO_HPP
 
 #include "cppa/any_tuple.hpp"
 #include "cppa/deserializer.hpp"
@@ -40,7 +29,8 @@
 #include "cppa/detail/to_uniform_name.hpp"
 #include "cppa/detail/uniform_type_info_map.hpp"
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 /**
  * @brief Implements all pure virtual functions of {@link uniform_type_info}
@@ -130,6 +120,7 @@ class abstract_uniform_type_info : public uniform_type_info {
 
 };
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
 
-#endif // CPPA_ABSTRACT_UNIFORM_TYPE_INFO_HPP
+#endif // CPPA_UTIL_ABSTRACT_UNIFORM_TYPE_INFO_HPP

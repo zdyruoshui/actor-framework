@@ -9,24 +9,15 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
+
+#include <iostream>
 
 #include "cppa/config.hpp"
 #include "cppa/util/get_root_uuid.hpp"
@@ -39,18 +30,13 @@ constexpr char uuid_format[] = "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF";
 
 namespace {
 
-inline void erase_trailing_newline(std::string& str) {
-    while (!str.empty() && (*str.rbegin()) == '\n') {
-        str.resize(str.size() - 1);
-    }
-}
-
 constexpr const char* s_get_uuid = "/usr/sbin/diskutil info / | "
                                    "/usr/bin/awk '$0 ~ /UUID/ { print $3 }'";
 
 } // namespace <anonymous>
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 std::string get_root_uuid() {
     char cbuf[100];
@@ -61,11 +47,25 @@ std::string get_root_uuid() {
         uuid += cbuf;
     }
     pclose(get_uuid_cmd);
-    erase_trailing_newline(uuid);
+    // erase trailing newlines
+    while (!uuid.empty() && uuid.back() == '\n') uuid.pop_back();
+    // check whether uuid is valid, note: sizeof() counts null terminator
+    auto valid =  uuid.size() == (sizeof(uuid_format) - 1)
+               && std::equal(uuid.begin(), uuid.end(), uuid_format,
+                             [](char lhs, char rhs) {
+                                 return    (rhs == 'F' && ::isxdigit(lhs))
+                                        || (rhs == '-' && lhs == '-');
+                             });
+    if (!valid) {
+        std::cerr << "*** WARNING: found invalid root UUID: "
+                  << uuid << std::endl;
+    }
     return uuid;
 }
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
+
 
 #elif defined(CPPA_LINUX)
 
@@ -116,7 +116,8 @@ bool operator!=(const columns_iterator& lhs, const columns_iterator& rhs) {
     return !(lhs == rhs);
 }
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 std::string get_root_uuid() {
     int sck = socket(AF_INET, SOCK_DGRAM, 0);
@@ -185,7 +186,9 @@ std::string get_root_uuid() {
     return uuid;
 }
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
+
 
 #elif defined(CPPA_WINDOWS)
 
@@ -198,7 +201,8 @@ std::string get_root_uuid() {
 
 using namespace std;
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 namespace { constexpr size_t max_drive_name = MAX_PATH; }
 
@@ -247,7 +251,9 @@ std::string get_root_uuid() {
     return uuid;
 }
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
+
 
 #endif // CPPA_WINDOWS
 

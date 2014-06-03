@@ -9,22 +9,11 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
@@ -40,20 +29,12 @@ namespace {
 typedef void* vptr;
 typedef void (*cst_fun)(vptr);
 
-// Boost's coroutine minimal stack size is pretty small
-// and easily causes stack overflows when using libcppa
-// in debug mode or with logging
-#if defined(CPPA_DEBUG_MODE) || defined(CPPA_LOG_LEVEL)
-constexpr size_t stack_multiplier = 4;
-#else
-constexpr size_t stack_multiplier = 2;
-#endif
-
 } // namespace <anonmyous>
 
-#if defined(CPPA_DISABLE_CONTEXT_SWITCHING) || defined(CPPA_STANDALONE_BUILD)
+#ifndef CPPA_ENABLE_CONTEXT_SWITCHING
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 cs_thread::cs_thread() : m_impl(nullptr) { }
 
@@ -62,15 +43,16 @@ cs_thread::cs_thread(cst_fun, vptr) : m_impl(nullptr) { }
 cs_thread::~cs_thread() { }
 
 void cs_thread::swap(cs_thread&, cs_thread&) {
-    throw std::logic_error("libcppa was compiled using "
-                           "CPPA_DISABLE_CONTEXT_SWITCHING");
+    throw std::logic_error("to enable context-switching, recompile libcppa "
+                           "using CPPA_ENABLE_CONTEXT_SWITCHING");
 }
 
 const bool cs_thread::is_disabled_feature = true;
 
-} } // namespace cppa::detail
+} // namespace util
+} // namespace cppa
 
-#else // CPPA_DISABLE_CONTEXT_SWITCHING  || CPPA_STANDALONE_BUILD
+#else // ifndef CPPA_ENABLE_CONTEXT_SWITCHING
 
 // optional valgrind include
 #ifdef CPPA_ANNOTATE_VALGRIND
@@ -84,7 +66,17 @@ CPPA_PUSH_WARNINGS
 #include <boost/coroutine/all.hpp>
 CPPA_POP_WARNINGS
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
+
+// Boost's coroutine minimal stack size is pretty small
+// and easily causes stack overflows, especially when using
+// libcppa's debug mode or logging
+#if defined(CPPA_DEBUG_MODE) || defined(CPPA_LOG_LEVEL)
+constexpr size_t stack_multiplier = 4;
+#else
+constexpr size_t stack_multiplier = 2;
+#endif
 
 void cst_trampoline(intptr_t iptr);
 
@@ -259,6 +251,7 @@ cs_thread::~cs_thread() {
 
 const bool cs_thread::is_disabled_feature = false;
 
-} } // namespace cppa::detail
+} // namespace util
+} // namespace cppa
 
-#endif // CPPA_DISABLE_CONTEXT_SWITCHING
+#endif // ifndef CPPA_ENABLE_CONTEXT_SWITCHING

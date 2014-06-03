@@ -9,27 +9,16 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_COMPARE_TUPLES_HPP
-#define CPPA_COMPARE_TUPLES_HPP
+#ifndef CPPA_UTIL_COMPARE_TUPLES_HPP
+#define CPPA_UTIL_COMPARE_TUPLES_HPP
 
 #include "cppa/get.hpp"
 
@@ -37,7 +26,8 @@
 #include "cppa/util/type_list.hpp"
 #include "cppa/util/type_traits.hpp"
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 template<size_t N, template<typename...> class Tuple, typename... Ts>
 const typename util::type_at<N, Ts...>::type&
@@ -60,9 +50,11 @@ struct cmp_helper<0, LhsTuple, RhsTuple> {
     }
 };
 
-} } // namespace cppa::detail
+} // namespace detail
+} // namespace cppa
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 template<template<typename...> class LhsTuple, typename... LhsTs,
          template<typename...> class RhsTuple, typename... RhsTs>
@@ -101,6 +93,7 @@ bool compare_first_elements(const LhsTuple<LhsTs...>& lhs,
                               RhsTuple<RhsTs...>>::cmp(lhs, rhs);
 }
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
 
-#endif // CPPA_COMPARE_TUPLES_HPP
+#endif // CPPA_UTIL_COMPARE_TUPLES_HPP

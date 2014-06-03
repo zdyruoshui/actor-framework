@@ -9,22 +9,11 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
@@ -314,6 +303,52 @@ void test_sending_typed_actors() {
     );
     self->send_exit(aut, exit_reason::user_shutdown);
 }
+
+/******************************************************************************
+ *                         returning different types                          *
+ ******************************************************************************/
+
+// might be implemented one fine day
+
+/*
+typedef typed_actor<
+            replies_to<int>::with<int>,
+            replies_to<int>::with<float>
+        >
+        different_results_t;
+
+different_results_t::behavior_type different_results_testee() {
+    return {
+        on_arg_match.when(cppa::placeholders::_x1 >= 5) >> [](int) {
+            return 1;
+        },
+        [](int) {
+            return 0.1f;
+        }
+    };
+}
+
+void test_returning_different_types() {
+    scoped_actor self;
+    auto testee = self->spawn_typed(different_results_testee);
+    self->sync_send(testee, 5).await(
+        [](int i) {
+            CPPA_CHECK_EQUAL(i, 1);
+        },
+        [&](float) {
+            CPPA_UNEXPECTED_MSG(self);
+        }
+    );
+    self->sync_send(testee, 4).await(
+        [](float f) {
+            CPPA_CHECK_EQUAL(f, 0.1f);
+        },
+        [&](int) {
+            CPPA_UNEXPECTED_MSG(self);
+        }
+    );
+}
+*/
 
 } // namespace <anonymous>
 

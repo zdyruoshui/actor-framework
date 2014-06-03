@@ -9,31 +9,20 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_PRODUCER_CONSUMER_LIST_HPP
-#define CPPA_PRODUCER_CONSUMER_LIST_HPP
+#ifndef CPPA_UTIL_PRODUCER_CONSUMER_LIST_HPP
+#define CPPA_UTIL_PRODUCER_CONSUMER_LIST_HPP
 
 #include "cppa/config.hpp"
 
-#define CPPA_CACHE_LINE_SIZE 64
+#define CPPA_UTIL_CACHE_LINE_SIZE 64
 
 #include <chrono>
 #include <thread>
@@ -69,7 +58,8 @@ inline void sleep_for(const chrono::duration<Rep, Period>& rt) {
 } } } // namespace std::this_thread::<anonymous>
 #endif
 
-namespace cppa { namespace util {
+namespace cppa {
+namespace util {
 
 /**
  * @brief A producer-consumer list.
@@ -104,7 +94,7 @@ class producer_consumer_list {
         static constexpr size_type payload_size =
                 sizeof(pointer) + sizeof(std::atomic<node*>);
 
-        static constexpr size_type cline_size = CPPA_CACHE_LINE_SIZE;
+        static constexpr size_type cline_size = CPPA_UTIL_CACHE_LINE_SIZE;
 
         static constexpr size_type pad_size =
                 (cline_size * ((payload_size / cline_size) + 1)) - payload_size;
@@ -116,16 +106,16 @@ class producer_consumer_list {
 
  private:
 
-    static_assert(sizeof(node*) < CPPA_CACHE_LINE_SIZE,
-                  "sizeof(node*) >= CPPA_CACHE_LINE_SIZE");
+    static_assert(sizeof(node*) < CPPA_UTIL_CACHE_LINE_SIZE,
+                  "sizeof(node*) >= CPPA_UTIL_CACHE_LINE_SIZE");
 
     // for one consumer at a time
     std::atomic<node*> m_first;
-    char m_pad1[CPPA_CACHE_LINE_SIZE - sizeof(node*)];
+    char m_pad1[CPPA_UTIL_CACHE_LINE_SIZE - sizeof(node*)];
 
     // for one producers at a time
     std::atomic<node*> m_last;
-    char m_pad2[CPPA_CACHE_LINE_SIZE - sizeof(node*)];
+    char m_pad2[CPPA_UTIL_CACHE_LINE_SIZE - sizeof(node*)];
 
     // shared among producers
     std::atomic<bool> m_consumer_lock;
@@ -199,6 +189,7 @@ class producer_consumer_list {
 
 };
 
-} } // namespace cppa::util
+} // namespace util
+} // namespace cppa
 
-#endif // CPPA_PRODUCER_CONSUMER_LIST_HPP
+#endif // CPPA_UTIL_PRODUCER_CONSUMER_LIST_HPP

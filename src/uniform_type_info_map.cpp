@@ -9,22 +9,11 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
@@ -56,7 +45,8 @@
 #include "cppa/detail/uniform_type_info_map.hpp"
 #include "cppa/detail/default_uniform_type_info.hpp"
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 // maps demangled names to libcppa names
 // WARNING: this map is sorted, insert new elements *in sorted order* as well!
@@ -287,14 +277,19 @@ void deserialize_impl(channel& ptrref, deserializer* source) {
 }
 
 void serialize_impl(const any_tuple& tup, serializer* sink) {
-    auto tname = tup.tuple_type_names();
-    auto uti = get_uniform_type_info_map()
-               ->by_uniform_name(tname
-                                ? *tname
-                                : detail::get_tuple_type_names(*tup.vals()));
+    std::string dynamic_name; // used if tup holds an object_array
+    // ttn can be nullptr even if tuple is not empty (in case of object_array)
+    const std::string* ttn = tup.empty() ? nullptr : tup.tuple_type_names();
+    const char* tname = ttn ? ttn->data() : (tup.empty() ? "@<>" : nullptr);
+    if (!tname) {
+        // tuple is not empty, i.e., we are dealing with an object array
+        dynamic_name = detail::get_tuple_type_names(*tup.vals());
+        tname = dynamic_name.c_str();
+    }
+    auto uti = get_uniform_type_info_map()->by_uniform_name(tname);
     if (uti == nullptr) {
         std::string err = "could not get uniform type info for \"";
-        err += tname ? *tname : detail::get_tuple_type_names(*tup.vals());
+        err += tname;
         err += "\"";
         CPPA_LOGF_ERROR(err);
         throw std::runtime_error(err);
@@ -1056,4 +1051,6 @@ uniform_type_info_map* uniform_type_info_map::create_singleton() {
 
 uniform_type_info_map::~uniform_type_info_map() { }
 
-} } // namespace cppa::detail
+} // namespace util
+} // namespace cppa
+

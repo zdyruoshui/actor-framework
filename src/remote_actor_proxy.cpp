@@ -9,22 +9,11 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
@@ -42,7 +31,8 @@
 
 using namespace std;
 
-namespace cppa { namespace io {
+namespace cppa {
+namespace io {
 
 inline sync_request_info* new_req_info(actor_addr sptr, message_id id) {
     return detail::memory::create<sync_request_info>(std::move(sptr), id);
@@ -158,7 +148,7 @@ void remote_actor_proxy::enqueue(msg_hdr_cref hdr, any_tuple msg,
                             "KILL_PROXY " << to_string(_this->address())
                             << " with exit reason " << reason);
             if (_this->m_pending_requests.closed()) {
-                CPPA_LOG_WARNING("received KILL_PROXY twice");
+                CPPA_LOG_INFO("received KILL_PROXY twice");
             }
             else {
                 _this->cleanup(reason);
@@ -213,4 +203,6 @@ void remote_actor_proxy::local_unlink_from(const actor_addr& other) {
     unlink_from_impl(other);
 }
 
-} } // namespace cppa::network
+} // namespace io
+} // namespace cppa
+

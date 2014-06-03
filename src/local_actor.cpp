@@ -9,22 +9,11 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
@@ -197,6 +186,10 @@ message_id local_actor::timed_sync_send_tuple_impl(message_priority mp,
                                                    const actor& dest,
                                                    const util::duration& rtime,
                                                    any_tuple&& what) {
+    if (!dest) {
+        throw std::invalid_argument("cannot send synchronous message "
+                                    "to invalid_actor");
+    }
     auto nri = new_request_id();
     if (mp == message_priority::high) nri = nri.with_high_priority();
     dest->enqueue({address(), dest, nri}, std::move(what), m_host);
@@ -209,6 +202,10 @@ message_id local_actor::timed_sync_send_tuple_impl(message_priority mp,
 message_id local_actor::sync_send_tuple_impl(message_priority mp,
                                              const actor& dest,
                                              any_tuple&& what) {
+    if (!dest) {
+        throw std::invalid_argument("cannot send synchronous message "
+                                    "to invalid_actor");
+    }
     auto nri = new_request_id();
     if (mp == message_priority::high) nri = nri.with_high_priority();
     dest->enqueue({address(), dest, nri}, std::move(what), m_host);
@@ -216,6 +213,7 @@ message_id local_actor::sync_send_tuple_impl(message_priority mp,
 }
 
 void anon_send_exit(const actor_addr& whom, std::uint32_t reason) {
+    if (!whom) return;
     auto ptr = detail::raw_access::get(whom);
     ptr->enqueue({invalid_actor_addr, ptr, message_id{}.with_high_priority()},
                  make_any_tuple(exit_msg{invalid_actor_addr, reason}), nullptr);

@@ -9,27 +9,16 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_TYPES_ARRAY_HPP
-#define CPPA_TYPES_ARRAY_HPP
+#ifndef CPPA_DETAIL_TYPES_ARRAY_HPP
+#define CPPA_DETAIL_TYPES_ARRAY_HPP
 
 #include <atomic>
 #include <typeinfo>
@@ -43,7 +32,8 @@ class uniform_type_info;
 const uniform_type_info* uniform_typeid(const std::type_info&);
 } // namespace cppa
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 enum type_info_impl { std_tinf, cppa_tinf };
 
@@ -210,6 +200,7 @@ struct static_type_list<T0, T1, Ts...> {
 template<typename T0, typename T1, typename... Ts>
 const std::type_info* static_type_list<T0, T1, Ts...>::list = &typeid(util::type_list<T0, T1, Ts...>);
 
-} } // namespace cppa::detail
+} // namespace detail
+} // namespace cppa
 
-#endif // CPPA_TYPES_ARRAY_HPP
+#endif // CPPA_DETAIL_TYPES_ARRAY_HPP

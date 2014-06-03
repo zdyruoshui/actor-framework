@@ -9,27 +9,16 @@
  *                                          \ \_\   \ \_\                     *
  *                                           \/_/    \/_/                     *
  *                                                                            *
- * Copyright (C) 2011-2013                                                    *
- * Dominik Charousset <dominik.charousset@haw-hamburg.de>                     *
+ * Copyright (C) 2011 - 2014                                                  *
+ * Dominik Charousset <dominik.charousset (at) haw-hamburg.de>                *
  *                                                                            *
- * This file is part of libcppa.                                              *
- * libcppa is free software: you can redistribute it and/or modify it under   *
- * the terms of the GNU Lesser General Public License as published by the     *
- * Free Software Foundation; either version 2.1 of the License,               *
- * or (at your option) any later version.                                     *
- *                                                                            *
- * libcppa is distributed in the hope that it will be useful,                 *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of             *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                       *
- * See the GNU Lesser General Public License for more details.                *
- *                                                                            *
- * You should have received a copy of the GNU Lesser General Public License   *
- * along with libcppa. If not, see <http://www.gnu.org/licenses/>.            *
+ * Distributed under the Boost Software License, Version 1.0. See             *
+ * accompanying file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt  *
 \******************************************************************************/
 
 
-#ifndef CPPA_MEMORY_HPP
-#define CPPA_MEMORY_HPP
+#ifndef CPPA_DETAIL_MEMORY_HPP
+#define CPPA_DETAIL_MEMORY_HPP
 
 #include <new>
 #include <vector>
@@ -43,7 +32,8 @@
 
 namespace cppa { class mailbox_element; }
 
-namespace cppa { namespace detail {
+namespace cppa {
+namespace detail {
 
 namespace {
 
@@ -94,7 +84,7 @@ class instance_wrapper;
 template<typename T>
 class basic_memory_cache;
 
-#ifdef CPPA_DISABLE_MEM_MANAGEMENT
+#ifdef CPPA_DETAIL_DISABLE_MEM_MANAGEMENT
 
 class memory {
 
@@ -117,10 +107,13 @@ class memory {
 
 };
 
-#else // CPPA_DISABLE_MEM_MANAGEMENT
+#else // CPPA_DETAIL_DISABLE_MEM_MANAGEMENT
 
 template<typename T>
 class basic_memory_cache : public memory_cache {
+
+    static constexpr size_t ne = s_alloc_size / sizeof(T);
+    static constexpr size_t dsize = ne > s_min_elements ? ne : s_min_elements;
 
     struct wrapper : instance_wrapper {
         ref_counted* parent;
@@ -133,8 +126,6 @@ class basic_memory_cache : public memory_cache {
 
     class storage : public ref_counted {
 
-        static constexpr size_t ne = s_alloc_size / sizeof(T);
-        static constexpr size_t dsize = ne > s_min_elements ? ne : s_min_elements;
 
      public:
 
@@ -163,7 +154,7 @@ class basic_memory_cache : public memory_cache {
     std::vector<wrapper*> cached_elements;
 
     basic_memory_cache() {
-        cached_elements.reserve(s_cache_size / sizeof(T));
+        cached_elements.reserve(dsize);
     }
 
     ~basic_memory_cache() {
@@ -174,18 +165,16 @@ class basic_memory_cache : public memory_cache {
         return static_cast<T*>(ptr);
     }
 
-
-    virtual void release_instance(void* vptr) {
+    void release_instance(void* vptr) override {
         CPPA_REQUIRE(vptr != nullptr);
         auto ptr = reinterpret_cast<T*>(vptr);
         CPPA_REQUIRE(ptr->outer_memory != nullptr);
         auto wptr = static_cast<wrapper*>(ptr->outer_memory);
         wptr->destroy();
-        if (cached_elements.capacity() > 0) cached_elements.push_back(wptr);
-        else wptr->deallocate();
+        wptr->deallocate();
     }
 
-    virtual std::pair<instance_wrapper*, void*> new_instance() {
+    std::pair<instance_wrapper*, void*> new_instance() override {
         if (cached_elements.empty()) {
             auto elements = new storage;
             for (auto i = elements->begin(); i != elements->end(); ++i) {
@@ -239,8 +228,9 @@ class memory {
 
 };
 
-#endif // CPPA_DISABLE_MEM_MANAGEMENT
+#endif // CPPA_DETAIL_DISABLE_MEM_MANAGEMENT
 
-} } // namespace cppa::detail
+} // namespace detail
+} // namespace cppa
 
-#endif // CPPA_MEMORY_HPP
+#endif // CPPA_DETAIL_MEMORY_HPP
