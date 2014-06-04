@@ -49,11 +49,37 @@ class transaction_based_peer : peer {
     using super = peer;
 
     friend class middleman_impl;
+    friend void message_handler(struct coap_context_t  *ctx,
+                                const coap_address_t *remote,
+                                coap_pdu_t *sent,
+                                coap_pdu_t *received,
+                                const coap_tid_t id);
+
+    friend coap_pdu_t* coap_new_request(coap_context_t *ctx,
+                                        method_t m,
+                                        coap_list_t *options ,
+                                        void* payload, size_t length);
+
+    struct coap_scope {
+        coap_scope(coap_context_t *ctx);
+        coap_context_t* ctx;
+        method_t default_method;
+        int flags;
+        coap_tick_t max_wait;   /* global timeout (changed by set_timeout()) */
+        std::atomic<bool> ready;
+        coap_endpoint_t* local_interface;
+        //coap_list_t* options;
+    };
 
     struct coap_request {
+        coap_request();
         coap_tid_t tid;
         coap_pdu_t* pdu;
         coap_tick_t timeout;
+        static unsigned char token_data[8];
+        str the_token;
+        coap_block_t block;
+        coap_tick_t obs_wait;   /* timeout for current subscription */
     };
     
  public:

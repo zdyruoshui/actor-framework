@@ -40,13 +40,26 @@
 namespace cppa {
 namespace io {
   
+transaction_based_peer::coap_scope::coap_scope(coap_context_t* ctx)
+    : ctx{ctx}
+    , default_method{1}
+    , flags{0}
+    , max_wait{0}
+    , local_interface{nullptr}
+    , options{nullptr} { }
+
+transaction_based_peer::coap_request::coap_request()
+    : tid{0}, pdu{nullptr}, timeout{0}
+    , the_token{0, token_data}, block{0, 0, 6}
+    , obs_wait{0} { }
+
 transaction_based_peer::transaction_based_peer(middleman* parent,
                                                coap_context_t* ctx,
                                                node_id_ptr peer_ptr)
         : super{ctx->sockfd, ctx->sockfd, peer_ptr}
         , m_parent{parent}
         , m_state{(peer_ptr) ? wait_for_msg_size : wait_for_process_info}
-        , coap{ctx} {
+        , m_coap_scope{ctx} {
     m_rd_buf.final_size( m_state == wait_for_process_info
                        ? sizeof(uint32_t) + node_id::host_id_size
                        : sizeof(uint32_t));
@@ -56,8 +69,9 @@ transaction_based_peer::transaction_based_peer(middleman* parent,
     m_meta_hdr = uniform_typeid<message_header>();
     m_meta_msg = uniform_typeid<any_tuple>();
 
+    coap_set_app_data(m_coap_scope.ctx, this);
     coap_register_option(ctx, COAP_OPTION_BLOCK2);
-    coap_register_response_handler(ctx, message_handler);
+    coap_register_response_handler(m_coap_scope.ctx, message_handler);
 }
   
 void transaction_based_peer::io_failed(event_bitmask mask) {
@@ -80,6 +94,7 @@ void transaction_based_peer::io_failed(event_bitmask mask) {
 
 continue_reading_result transaction_based_peer::continue_reading() {
     CPPA_LOG_TRACE("");
+
 //    for (;;) {
 //        try { m_rd_buf.append_from(m_in.get()); }
 //        catch (std::exception&) {
@@ -323,7 +338,33 @@ void transaction_based_peer::unlink(const actor_addr& lhs, const actor_addr& rhs
 
 continue_writing_result transaction_based_peer::continue_writing() {
     CPPA_LOG_TRACE("");
-    throw std::logic_error("continue writing called in transaction based peer");
+    //throw std::logic_error("continue writing called in transaction based peer");
+    // check if acks are received
+
+//    coap_queue_t* nextpdu = coap_peek_next( m_coap_scope.ctx );
+//    coap_tick_t now;
+//    coap_ticks(&now);
+//    while (nextpdu && nextpdu->t <= now - m_coap_scope.ctx->sendqueue_basetime) {
+//        coap_retransmit( m_coap_scope.ctx, coap_pop_next( m_coap_scope.ctx ));
+//        nextpdu = coap_peek_next( m_coap_scope.ctx );
+//    }
+//    struct timeval tv;
+//    if (nextpdu && nextpdu->t < std::min(m_coap_scope.obs_wait ? m_coap_scope.obs_wait :
+//                                                                 m_coap_scope.max_wait,
+//                                         m_coap_scope.max_wait) - now) {
+//        /* set timeout if there is a pdu to send */
+//        tv.tv_usec = ((nextpdu->t) % COAP_TICKS_PER_SECOND) * 1000000 / COAP_TICKS_PER_SECOND;
+//        tv.tv_sec = (nextpdu->t) / COAP_TICKS_PER_SECOND;
+//    } else {
+//        /* check if obs_wait fires before max_wait */
+//        if (m_coap_scope.obs_wait && m_coap_scope.obs_wait < m_coap_scope.max_wait) {
+//            tv.tv_usec = ((m_coap_scope.obs_wait - now) % COAP_TICKS_PER_SECOND) * 1000000 / COAP_TICKS_PER_SECOND;
+//            tv.tv_sec = (m_coap_scope.obs_wait - now) / COAP_TICKS_PER_SECOND;
+//        } else {
+//            tv.tv_usec = ((m_coap_scope.max_wait - now) % COAP_TICKS_PER_SECOND) * 1000000 / COAP_TICKS_PER_SECOND;
+//            tv.tv_sec = (m_coap_scope.max_wait - now) / COAP_TICKS_PER_SECOND;
+//        }
+//    }
 }
 
 void transaction_based_peer::add_type_if_needed(const std::string& tname) {
@@ -361,7 +402,7 @@ void transaction_based_peer::enqueue_impl(msg_hdr_cref hdr, const any_tuple& msg
 }
 
 void transaction_based_peer::enqueue(msg_hdr_cref hdr, const any_tuple& msg) {
-//    enqueue_impl(hdr, msg);
+    enqueue_impl(hdr, msg);
 //    register_for_writing();
 }
 
@@ -376,6 +417,8 @@ int transaction_based_peer::send_coap_message(coap_address_t& dst,
                                               void* data, size_t size,
                                               coap_list_t* options,
                                               int type, method_t method) {
+    coap_request req;
+
     coap_pdu_t *pdu;
     coap_list_t *opt;
 
@@ -387,45 +430,48 @@ int transaction_based_peer::send_coap_message(coap_address_t& dst,
     pdu->hdr->id = coap_new_message_id(m_coap_scope.ctx);
     pdu->hdr->code = method;
 
-    pdu->hdr->token_length = m_coap_scope.the_token.length;
-    if (!coap_add_token(pdu, m_coap_scope.the_token.length, m_coap_scope.the_token.s)) {
-      debug("cannot add token to request\n");
+    pdu->hdr->token_length = req.the_token.length;
+    if (!coap_add_token(pdu, req.the_token.length, req.the_token.s)) {
+        debug("cannot add token to request\n");
     }
 
     coap_show_pdu(pdu);
 
     for (opt = options; opt; opt = opt->next) {
-      coap_add_option(pdu,
-                      COAP_OPTION_KEY(*(coap_option *)opt->data),
-                      COAP_OPTION_LENGTH(*(coap_option *)opt->data),
-                      COAP_OPTION_DATA(*(coap_option *)opt->data));
+        coap_add_option(pdu,
+                        COAP_OPTION_KEY(*(coap_option *)opt->data),
+                        COAP_OPTION_LENGTH(*(coap_option *)opt->data),
+                        COAP_OPTION_DATA(*(coap_option *)opt->data));
     }
 
     if (size > 0) {
-      if ((m_coap_scope.flags & FLAGS_BLOCK) == 0) {
-          coap_add_data(pdu, size, (unsigned char *) data);
-      }
-      else {
-          coap_add_block(pdu, size, (unsigned char *) data,
-                         m_coap_scope.block.num, m_coap_scope.block.szx);
-      }
+    if ((m_coap_scope.flags & FLAGS_BLOCK) == 0) {
+        coap_add_data(pdu, size, (unsigned char *) data);
+    }
+    else {
+        coap_add_block(pdu, size, (unsigned char *) data,
+                       req.block.num, req.block.szx);
+    }
     }
 
     coap_tid_t tid;
     if (type == COAP_MESSAGE_CON) {
-        tid = coap_send_confirmed(m_coap_scope.ctx, &dst, pdu);
+        tid = coap_send_confirmed(m_coap_scope.ctx,
+                                  m_coap_scope.local_interface,
+                                  &dst, pdu);
     }
     else {
-      tid = coap_send(m_coap_scope.ctx, &dst, pdu);
+        tid = coap_send(m_coap_scope.ctx,
+                        m_coap_scope.local_interface,
+                        &dst, pdu);
     }
     if (pdu->hdr->type != COAP_MESSAGE_CON || tid == COAP_INVALID_TID) {
         coap_delete_pdu(pdu);
     }
     else {
-        coap_tick_t timeout;
-        coap_ticks(&timeout);
-        timeout += wait_seconds * COAP_TICKS_PER_SECOND;
-        m_requests.emplace(pdu->hdr->id, coap_request{tid, pdu, timeout});
+        coap_ticks(&req.timeout);
+        req.timeout += wait_seconds * COAP_TICKS_PER_SECOND;
+        m_requests.emplace(pdu->hdr->id, std::move(req));
     }
 }
 
