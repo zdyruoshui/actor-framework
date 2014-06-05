@@ -38,15 +38,14 @@
 
 #include "cppa/io/peer.hpp"
 
-#include "cppa/io/transaction_reader.hpp"
-#include "cppa/io/transaction_writer.hpp"
-
 namespace cppa {
 namespace io {
 
 class transaction_based_peer : peer {
     
     using super = peer;
+
+    struct coap_request;
 
     friend class middleman_impl;
     friend void message_handler(struct coap_context_t  *ctx,
@@ -55,24 +54,14 @@ class transaction_based_peer : peer {
                                 coap_pdu_t *received,
                                 const coap_tid_t id);
 
-    friend coap_pdu_t* coap_new_request(coap_context_t *ctx,
-                                        method_t m,
-                                        coap_list_t *options ,
-                                        void* payload, size_t length);
-
-    struct coap_scope {
-        coap_scope(coap_context_t *ctx);
-        coap_context_t* ctx;
-        method_t default_method;
-        int flags;
-        coap_tick_t max_wait;   /* global timeout (changed by set_timeout()) */
-        std::atomic<bool> ready;
-        coap_endpoint_t* local_interface;
-        //coap_list_t* options;
-    };
+    friend coap_request new_request(coap_context_t *ctx,
+                                    unsigned char method,
+                                    coap_list_t *options,
+                                    void *payload, size_t size);
 
     struct coap_request {
         coap_request();
+        ~coap_request();
         coap_tid_t tid;
         coap_pdu_t* pdu;
         coap_tick_t timeout;
@@ -80,13 +69,18 @@ class transaction_based_peer : peer {
         str the_token;
         coap_block_t block;
         coap_tick_t obs_wait;   /* timeout for current subscription */
+        void* data;
+        size_t size;
+        int flags;
+        coap_list_t* options;
     };
-    
+
  public:
  
     transaction_based_peer(middleman* parent,
                            coap_context_t* ctx,
-                           node_id_ptr peer_ptr = nullptr);
+                           coap_endpoint_t* interface,
+                           node_id_ptr peer_ptr);
     
     void enqueue(msg_hdr_cref hdr, const any_tuple& msg) override;
 
@@ -128,8 +122,15 @@ class transaction_based_peer : peer {
     type_lookup_table m_incoming_types;
     type_lookup_table m_outgoing_types;
 
-    coap_scope m_coap_scope;
+    // coap data
     std::map<unsigned short,coap_request> m_requests;
+    coap_context_t* m_ctx;
+    unsigned char m_default_method;
+    coap_tick_t m_max_wait;   /* global timeout (changed by set_timeout()) */
+    std::atomic<bool> m_ready;
+    coap_endpoint_t* m_interface;
+    coap_list_t* m_options;
+    
 
     void monitor(const actor_addr& sender, const node_id_ptr& node, actor_id aid);
 
@@ -145,10 +146,10 @@ class transaction_based_peer : peer {
 
     void add_type_if_needed(const std::string& tname);
 
-    int send_coap_message(coap_address_t &dst, void* data, size_t size,
-                          coap_list_t* options,
-                          int type, method_t method);
-
+    void send_coap_message(coap_address_t* dst,
+                           void* payload, size_t size,
+                           coap_list_t* options,
+                           int type, unsigned char method);
 
 };
 

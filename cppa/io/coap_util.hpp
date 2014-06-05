@@ -1,19 +1,18 @@
 #ifndef COAP_UTIL_HPP
 #define COAP_UTIL_HPP
 
+#include <atomic>
+
 #include "coap.h"
 
-#include <atomic>
+#include "cppa/io/transaction_based_peer.hpp"
 
 namespace cppa {
 namespace io {
 
 namespace {
 
-using method_t = unsigned char;
-
 constexpr int FLAGS_BLOCK = 0x01;
-constexpr unsigned char msgtype = COAP_MESSAGE_CON;
 
 constexpr unsigned int wait_seconds = 90;   /* default timeout in seconds */
 constexpr unsigned int obs_seconds = 30;    /* default observe time */
@@ -55,10 +54,16 @@ void message_handler(struct coap_context_t  *ctx,
                      coap_pdu_t *received,
                      const coap_tid_t id);
 
-coap_pdu_t* coap_new_request(coap_context_t *ctx,
-                             method_t m,
-                             coap_list_t *options,
-                             void *payload, size_t length);
+int order_opts(void *a, void *b);
+
+coap_list_t* new_option_node(unsigned short key,
+                             unsigned int length,
+                             unsigned char *data);
+
+transaction_based_peer::coap_request new_request(coap_context_t *ctx,
+                                                 unsigned char method,
+                                                 coap_list_t *options,
+                                                 void* payload, size_t size);
 
 } // namespace io
 } // namespace cppa
