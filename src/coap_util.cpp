@@ -1,6 +1,10 @@
-#include "pdu.h"
 
+#include <chrono>
+#include <random>
+#include <iomanip>
+#include <sstream>
 #include <iostream>
+#include <algorithm>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -12,8 +16,13 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include "cppa/cppa.hpp"
+
 #include "cppa/io/coap_util.hpp"
 #include "cppa/io/transaction_based_peer.hpp"
+
+#include "cppa/binary_serializer.hpp"
+#include "cppa/binary_deserializer.hpp"
 
 namespace cppa {
 namespace io {
@@ -22,9 +31,25 @@ namespace io {
 
 /***  coap utility functions ***/
 
-coap_context_t* get_context(const char* node, const char *port,
-                            coap_endpoint_t* local_interface) {
-    coap_context_t *ctx = NULL;
+void generate_token(str* the_token, size_t bytes) {
+    auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+    std::stringstream s;
+    s << msec;
+    std::random_device rdev{};
+    std::independent_bits_engine<std::mt19937_64,64,std::uint_fast64_t> gen{rdev()};
+    std::uniform_int_distribution<std::uint_fast64_t> dis{};
+    while (s.str().size() < bytes) {
+        s << dis(gen);    
+    }
+    std::copy_n(s.str().c_str(), bytes, the_token->s);
+    the_token->length = bytes;
+}
+
+coap_context_t* get_context(const char *node, const char *port,
+                            coap_endpoint_t * interface) {
+    coap_context_t *ctx = nullptr;
     int s;
     struct addrinfo hints;
     struct addrinfo *result, *rp;
@@ -33,15 +58,15 @@ coap_context_t* get_context(const char* node, const char *port,
     hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
     hints.ai_socktype = SOCK_DGRAM; /* Coap uses UDP */
     hints.ai_flags = AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV | AI_ALL;
-
+  
     s = getaddrinfo(node, port, &hints, &result);
     if ( s != 0 ) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-        return NULL;
+        return nullptr;
     }
 
     /* iterate through results until success */
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
+    for (rp = result; rp != nullptr; rp = rp->ai_next) {
         coap_address_t addr;
 
         if (rp->ai_addrlen <= sizeof(addr.addr)) {
@@ -49,30 +74,29 @@ coap_context_t* get_context(const char* node, const char *port,
             addr.size = rp->ai_addrlen;
             memcpy(&addr.addr, rp->ai_addr, rp->ai_addrlen);
 
-            local_interface = coap_new_endpoint(&addr, 0);
-            if (!local_interface)
+            interface = coap_new_endpoint(&addr, 0);
+            if (!interface)
                 continue;
 
             ctx = coap_new_context();
             if (ctx) {
-                /* TODO: output address:port for successful binding */
+                // binding succeeded
                 break;
             } else {
-                coap_free_endpoint(local_interface);
-                local_interface = NULL;
+                coap_free_endpoint(interface);
+                interface = nullptr;
             }
         }
     }
+  
+    fprintf(stderr, "no context available for interface '%s'\n", node);
 
-    if (!ctx) {
-        throw std::ios_base::failure("could not create context "
-                                     "for a local interfaces");
-    }
     freeaddrinfo(result);
     return ctx;
 }
 
 void message_handler(struct coap_context_t  *ctx,
+                     const coap_endpoint_t*, // local_interface
                      const coap_address_t *remote,
                      coap_pdu_t *sent,
                      coap_pdu_t *received,
@@ -80,7 +104,6 @@ void message_handler(struct coap_context_t  *ctx,
 
     auto ptr = reinterpret_cast<transaction_based_peer*>(ctx->app);
     coap_pdu_t *pdu = nullptr;
-    transaction_based_peer::coap_request req;
     coap_opt_t *block_opt;
     coap_opt_iterator_t opt_iter;
     unsigned char buf[4];
@@ -89,8 +112,10 @@ void message_handler(struct coap_context_t  *ctx,
     coap_tid_t tid;
 
     if (LOG_DEBUG <= coap_get_log_level()) {
-        debug("** process incoming %d.%02d response:\n",
-              (received->hdr->code >> 5), received->hdr->code & 0x1F);
+        CPPA_LOGF_TRACE("process incoming response: " <<
+                        (received->hdr->code >> 5) << "." <<
+                        std::setw(2) << std::setfill('0') <<
+                        (received->hdr->code & 0x1F));
         coap_show_pdu(received);
     }
 
@@ -108,8 +133,10 @@ void message_handler(struct coap_context_t  *ctx,
         }
         return;
     }
+    
+    // todo: remove after testing
     std::cout << "[message handler] received packet has "
-              << (itr->first == id) ? "expected" : "unexpected"
+              << ((itr->first == id) ? "expected" : "unexpected")
               << " coap_tid" << std::endl;
 
 
@@ -127,127 +154,172 @@ void message_handler(struct coap_context_t  *ctx,
 
     // output the received data, if any
     if (received->hdr->code == COAP_RESPONSE_CODE(205)) {
-        // request data matching the response
-        auto answered = itr->second;
+        auto request = itr->second; // request data matching the response
 
         // set obs timer if we have successfully subscribed a resource
         if (sent && coap_check_option(received, COAP_OPTION_SUBSCRIPTION, &opt_iter)) {
-            debug("observation relationship established, set timeout to %d\n", obs_seconds);
-            set_timeout(&answered.obs_wait, obs_seconds);
+            CPPA_LOGF_DEBUG("[message handler] observation relationship "
+                            "established, set timeout to" << obs_seconds);
+            set_timeout(&request.obs_wait, obs_seconds);
         }
 
-        // Got some data, check if block option is set. Behavior is undefined if
-        // both, Block1 and Block2 are present.
+        // Got some data, check if block option is set.
         block_opt = get_block(received, &opt_iter);
-        if (!block_opt) {
-            // There is no block option set, just read the data and we are done.
+        if (!block_opt) { // no block option set
+            std::cout << "[message handler] message without block opt" << std::endl;
             if (coap_get_data(received, &len, &databuf)) {
-                // TODO: handle data
-                std::cout << "[message handler] handle incoming data missing" << std::endl;
-//                append_to_output(databuf, len);
+                std::cout << "[message handler] incoming data" << std::endl;
+                message_header hdr;
+                any_tuple msg;
+                binary_deserializer bd(databuf, len,
+                                       &(ptr->m_parent->get_namespace()),
+                                       nullptr);
+                // todo: not sure about the nullptr
+                try {
+                    ptr->m_meta_hdr->deserialize(&hdr, &bd);
+                    ptr->m_meta_msg->deserialize(&msg, &bd);
+                }
+                catch (std::exception& e) {
+                    CPPA_LOGF_ERROR("exception during read_message: "
+                                    << detail::demangle(typeid(e))
+                                    << ", what(): " << e.what());
+                }
+                CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
+                                                 << " " << to_string(msg));
+                match(msg) (
+                    on(atom("MONITOR"), arg_match) >> [&](const node_id_ptr&,
+                                                          actor_id) {
+                        CPPA_LOGF_DEBUG("[message_handler] received MONITOR msg");
+                    },
+                    on(atom("KILL_PROXY"), arg_match) >> [&](const node_id_ptr&,
+                                                             actor_id, std::uint32_t) {
+                        CPPA_LOGF_DEBUG("[message_handler] received KILL msg");
+                    },
+                    on(atom("LINK"), arg_match) >> [&](const actor_addr&) {
+                        CPPA_LOGF_DEBUG("[message_handler] received LINK msg");
+                    },
+                    on(atom("UNLINK"), arg_match) >> [&](const actor_addr&) {
+                        CPPA_LOGF_DEBUG("[message_handler] received UNLINK msg");
+                    },
+                    on(atom("ADD_TYPE"), arg_match) >> [&](std::uint32_t,
+                                                           const std::string&) {
+                        CPPA_LOGF_DEBUG("[message_handler] received TYPE msg");
+                    },
+                    others() >> [&] {
+                        hdr.deliver(std::move(msg));
+                    }
+                );
             }
-
         } else {
+            std::cout << "[message handler] message with block opt" << std::endl;
             unsigned short blktype = opt_iter.type;
-
-            /* TODO: check if we are looking at the correct block number */
             if (coap_get_data(received, &len, &databuf)) {
                 // TODO: handle data
                 std::cout << "[message handler] handle incoming data missing" << std::endl;
-//                append_to_output(databuf, len);
             }
-
-            if (COAP_OPT_BLOCK_MORE(block_opt)) {
-                /* more bit is set */
+            if (COAP_OPT_BLOCK_MORE(block_opt)) { // more bit is set
                 debug("found the M bit, block size is %u, block nr. %u\n",
                       COAP_OPT_BLOCK_SZX(block_opt),
                       COAP_OPT_BLOCK_NUM(block_opt));
 
                 // create pdu with request for next block
-                // first, create bare PDU w/o any option
-//                req = coap_new_request(ctx, ptr->m_coap_scope.default_method, nullptr);
                 pdu = coap_new_pdu();
-                if ( pdu ) {
-                    // add URI components from optlist
-                    auto add_options = [&pdu](coap_list_t* options) {
-                        for (coap_list_t* opt = options; opt; opt = opt->next ) {
-                            switch (COAP_OPTION_KEY(*(coap_option *)opt->data)) {
-                            case COAP_OPTION_URI_HOST :
-                            case COAP_OPTION_URI_PORT :
-                            case COAP_OPTION_URI_PATH :
-                            case COAP_OPTION_URI_QUERY :
-                                coap_add_option(
-                                    pdu,
-                                    COAP_OPTION_KEY   (*(coap_option *)opt->data),
-                                    COAP_OPTION_LENGTH(*(coap_option *)opt->data),
-                                    COAP_OPTION_DATA  (*(coap_option *)opt->data)
-                                );
-                                break;
-                            default:
-                                ;			/* skip other options */
-                            }
-                        }
-                    };
-                    add_options(ptr->m_options);
-                    add_options(req.options);
-
-                    // finally add updated block option from response, clear M bit
-                    // blocknr = (blocknr & 0xfffffff7) + 0x10;
-                    debug("query block %d\n", (COAP_OPT_BLOCK_NUM(block_opt) + 1));
-                    coap_add_option(pdu, blktype, coap_encode_var_bytes(buf,
-                                    ((COAP_OPT_BLOCK_NUM(block_opt) + 1) << 4) |
-                                      COAP_OPT_BLOCK_SZX(block_opt)), buf);
-
-                    if (received->hdr->type == COAP_MESSAGE_CON) {
-                        tid = coap_send_confirmed(ctx,
-                                                  ptr->m_interface,
-                                                  remote, pdu);
-                    }
-                    else {
-                        tid = coap_send(ctx,
-                                        ptr->m_interface,
-                                        remote, pdu);
-                    }
-
-                    if (tid == COAP_INVALID_TID) {
-                        debug("message_handler: error sending new request");
-                        coap_delete_pdu(pdu);
-                    } else {
-                        // why use the global timeout?
-                        set_timeout(&ptr->m_max_wait, wait_seconds);
-                        if (received->hdr->type != COAP_MESSAGE_CON) {
-                            coap_delete_pdu(pdu);
-                        }
-                    }
-
-                    return;
+                if (!pdu) {
+                    throw std::runtime_error("[message handler] failed to create coap pdu");
                 }
+                pdu->hdr->type = request.pdu->hdr->type;
+                pdu->hdr->id = coap_new_message_id(ctx);
+                pdu->hdr->code = request.pdu->hdr->code;
+                
+                generate_token(&request.the_token, 8); // todo: is this required?
+                coap_add_token(pdu, request.the_token.length, request.the_token.s);
+                
+                // add URI components from optlist
+                auto add_options = [&pdu](coap_list_t* options) {
+                    for (coap_list_t* opt = options; opt; opt = opt->next ) {
+                        switch (COAP_OPTION_KEY(*(coap_option *)opt->data)) {
+                        case COAP_OPTION_URI_HOST :
+                        case COAP_OPTION_URI_PORT :
+                        case COAP_OPTION_URI_PATH :
+                        case COAP_OPTION_URI_QUERY :
+                            coap_add_option(
+                                pdu,
+                                COAP_OPTION_KEY   (*(coap_option *)opt->data),
+                                COAP_OPTION_LENGTH(*(coap_option *)opt->data),
+                                COAP_OPTION_DATA  (*(coap_option *)opt->data)
+                            );
+                            break;
+                        default:
+                            ;			/* skip other options */
+                        }
+                    }
+                };
+                add_options(ptr->m_options);
+                add_options(request.options);
+
+                // finally add updated block option from response, clear M bit
+                // blocknr = (blocknr & 0xfffffff7) + 0x10;
+                debug("query block %d\n", (COAP_OPT_BLOCK_NUM(block_opt) + 1));
+                coap_add_option(pdu, blktype, coap_encode_var_bytes(buf,
+                                ((COAP_OPT_BLOCK_NUM(block_opt) + 1) << 4) |
+                                  COAP_OPT_BLOCK_SZX(block_opt)), buf);
+
+                if (received->hdr->type == COAP_MESSAGE_CON) {
+                    tid = coap_send_confirmed(ctx,
+                                              ptr->m_interface,
+                                              remote, pdu);
+                }
+                else {
+                    tid = coap_send(ctx,
+                                    ptr->m_interface,
+                                    remote, pdu);
+                }
+
+                if (tid == COAP_INVALID_TID) {
+                    debug("message_handler: error sending new request");
+                    coap_delete_pdu(pdu);
+//                    ptr->m_requests.erase(req);
+                } else {
+                    set_timeout(&ptr->m_max_wait, wait_seconds);
+                    if (received->hdr->type != COAP_MESSAGE_CON) {
+                        coap_delete_pdu(pdu);
+//                        ptr->m_requests.erase(req);
+                    }
+                }
+                return;
+            }
+            else {
+                std::cout << "[message handler] message with block opt"
+                             " ('more' flag is not set -> unhandled)"
+                          << std::endl;
             }
         }
     } else {			/* no 2.05 */
 
         // check if an error was signaled and output payload if so
         if (COAP_RESPONSE_CLASS(received->hdr->code) >= 4) {
-            fprintf(stderr, "%d.%02d",
-                    (received->hdr->code >> 5), received->hdr->code & 0x1F);
+            CPPA_LOGF_ERROR((received->hdr->code >> 5) << "." <<
+                            std::setw(2) << std::setfill('0') <<
+                            (received->hdr->code & 0x1F));
             if (coap_get_data(received, &len, &databuf)) {
-                fprintf(stderr, " ");
-                while(len--)
-                fprintf(stderr, "%c", *databuf++);
+                std::cout << "[message handler] error + data -> unhandled"
+                          << std::endl;
             }
             fprintf(stderr, "\n");
         }
     }
 
-    // finally send new request, if needed
-    if (pdu && coap_send(ctx, ptr->m_interface,
-                         remote, pdu) == COAP_INVALID_TID) {
-        debug("message_handler: error sending response");
+    // send new request, if needed
+    if (pdu) {
+        auto ret = coap_send(ctx, ptr->m_interface, remote, pdu);
+        if (ret == COAP_INVALID_TID) {
+            throw std::runtime_error("[message_handler] error sending response");
+        }
     }
     coap_delete_pdu(pdu);
 
     // our job is done, we can exit at any time
-    //ready = coap_check_option(received, COAP_OPTION_SUBSCRIPTION, &opt_iter) == NULL;
+    // ready = coap_check_option(received, COAP_OPTION_SUBSCRIPTION, &opt_iter) == NULL;
 }
 
 int order_opts(void *a, void *b) {
@@ -321,8 +393,8 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
         throw std::runtime_error("failed to create coap pdu");
     }
 
-    pdu->hdr->type = ptr->m_default_method;
-    pdu->hdr->id = coap_new_message_id(ptr->m_ctx);
+    pdu->hdr->type = ptr->m_default_msgtype;
+    pdu->hdr->id   = coap_new_message_id(ptr->m_ctx);
     pdu->hdr->code = method;
 
     pdu->hdr->token_length = req.the_token.length;
@@ -358,6 +430,44 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
 
     req.pdu = pdu;
     return req;
+}
+
+int resolve_address(const char* server, struct sockaddr *dst) {
+    struct addrinfo *res, *ainfo;
+    struct addrinfo hints;
+    static char addrstr[256];
+    int error, len{-1};
+
+    memset(addrstr, 0, sizeof(addrstr));
+    if (server != nullptr) {
+        memcpy(addrstr, server, strlen(server));
+    }
+    else {
+        memcpy(addrstr, "localhost", 9);
+    }
+
+    memset ((char *)&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_family = AF_UNSPEC;
+
+    error = getaddrinfo(addrstr, "", &hints, &res);
+
+    if (error != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(error));
+        return error;
+    }
+
+    memset(dst, 0, sizeof(struct sockaddr));
+    for (ainfo = res; ainfo != NULL; ainfo = ainfo->ai_next) {
+        if (ainfo->ai_family == AF_INET || ainfo->ai_family == AF_INET6) {
+            len = ainfo->ai_addrlen;
+            memcpy(dst, ainfo->ai_addr, len);
+            break;
+        }
+    }
+
+    freeaddrinfo(res);
+    return len;
 }
 
 } // namespace io

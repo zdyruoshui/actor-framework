@@ -215,8 +215,6 @@ set(LIBCPPA_SRC
     src/stream.cpp
     src/string_serialization.cpp
     src/stream_based_peer.cpp
-    src/transaction_based_peer.cpp
-    src/coap_util.cpp
     src/sync_request_bouncer.cpp
     src/tcp_acceptor.cpp
     src/tcp_io_stream.cpp
@@ -262,6 +260,11 @@ if (ENABLE_COAP)
     find_package(COAP REQUIRED)
     set(LD_FLAGS ${LD_FLAGS} ${COAP_LIBRARIES})
     set(INCLUDE_DIRS ${INCLUDE_DIRS} ${COAP_INCLUDE_DIRS})
+    set(LIBCPPA_SRC
+        ${LIBCPPA_SRC}
+        src/coap_util.cpp
+        src/cppa_coap.cpp
+        src/transaction_based_peer.cpp)
     add_definitions(-DCPPA_COAP)
 endif (ENABLE_COAP)
 

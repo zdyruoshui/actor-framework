@@ -41,14 +41,29 @@
 namespace cppa {
 namespace io {
 
-class transaction_based_peer : peer {
+class transaction_based_peer : public peer {
     
     using super = peer;
 
-    struct coap_request;
+    struct coap_request {
+        coap_request();
+        ~coap_request();
+        coap_tid_t tid;
+        coap_pdu_t* pdu;
+        coap_tick_t timeout;
+        unsigned char token_data[8];
+        str the_token;
+        coap_block_t block;
+        coap_tick_t obs_wait;   /* timeout for current subscription */
+        void* data;
+        size_t size;
+        int flags;
+        coap_list_t* options;
+    };
 
     friend class middleman_impl;
     friend void message_handler(struct coap_context_t  *ctx,
+                                const coap_endpoint_t *local_interface,
                                 const coap_address_t *remote,
                                 coap_pdu_t *sent,
                                 coap_pdu_t *received,
@@ -58,22 +73,6 @@ class transaction_based_peer : peer {
                                     unsigned char method,
                                     coap_list_t *options,
                                     void *payload, size_t size);
-
-    struct coap_request {
-        coap_request();
-        ~coap_request();
-        coap_tid_t tid;
-        coap_pdu_t* pdu;
-        coap_tick_t timeout;
-        static unsigned char token_data[8];
-        str the_token;
-        coap_block_t block;
-        coap_tick_t obs_wait;   /* timeout for current subscription */
-        void* data;
-        size_t size;
-        int flags;
-        coap_list_t* options;
-    };
 
  public:
  
@@ -91,6 +90,8 @@ class transaction_based_peer : peer {
     void dispose() override;
 
     void io_failed(event_bitmask mask) override;
+
+    bool has_unwritten_data() const override;
 
     inline void enqueue(const any_tuple& msg) {
         enqueue({invalid_actor_addr, nullptr}, msg);
@@ -125,6 +126,7 @@ class transaction_based_peer : peer {
     // coap data
     std::map<unsigned short,coap_request> m_requests;
     coap_context_t* m_ctx;
+    unsigned char m_default_msgtype;
     unsigned char m_default_method;
     coap_tick_t m_max_wait;   /* global timeout (changed by set_timeout()) */
     std::atomic<bool> m_ready;
@@ -139,13 +141,7 @@ class transaction_based_peer : peer {
     void link(const actor_addr& sender, const actor_addr& ptr);
 
     void unlink(const actor_addr& sender, const actor_addr& ptr);
-
-    void deliver(msg_hdr_cref hdr, any_tuple msg);
-
-    void enqueue_impl(msg_hdr_cref hdr, const any_tuple& msg);
-
-    void add_type_if_needed(const std::string& tname);
-
+    
     void send_coap_message(coap_address_t* dst,
                            void* payload, size_t size,
                            coap_list_t* options,

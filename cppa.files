@@ -364,4 +364,6 @@ cppa/io/transaction_based_peer.hpp
 src/stream_based_peer.cpp
 src/transaction_based_peer.cpp
 cppa/io/coap_util.hpp
+cppa/io/cppa_coap.hpp
+src/cppa_coap.cpp
 src/coap_util.cpp

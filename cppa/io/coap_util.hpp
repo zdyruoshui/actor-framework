@@ -22,30 +22,32 @@ constexpr unsigned int obs_seconds = 30;    /* default observe time */
 /***  coap utility functions ***/
 
 inline int check_token(coap_pdu_t *received, str* the_token) {
-  return received->hdr->token_length == the_token->length &&
-    memcmp(received->hdr->token, the_token->s, the_token->length) == 0;
+    return received->hdr->token_length == the_token->length &&
+        memcmp(received->hdr->token, the_token->s, the_token->length) == 0;
 }
 
 inline void set_timeout(coap_tick_t *timer, const unsigned int seconds) {
-  coap_ticks(timer);
-  *timer += seconds * COAP_TICKS_PER_SECOND;
+    coap_ticks(timer);
+    *timer += seconds * COAP_TICKS_PER_SECOND;
 }
 
 inline coap_opt_t* get_block(coap_pdu_t *pdu, coap_opt_iterator_t *opt_iter) {
-  coap_opt_filter_t f;
+    coap_opt_filter_t f;
 
-  assert(pdu);
+    assert(pdu);
 
-  memset(f, 0, sizeof(coap_opt_filter_t));
-  coap_option_setb(f, COAP_OPTION_BLOCK1);
-  coap_option_setb(f, COAP_OPTION_BLOCK2);
+    memset(f, 0, sizeof(coap_opt_filter_t));
+    coap_option_setb(f, COAP_OPTION_BLOCK1);
+    coap_option_setb(f, COAP_OPTION_BLOCK2);
 
-  coap_option_iterator_init(pdu, opt_iter, f);
-  return coap_option_next(opt_iter);
+    coap_option_iterator_init(pdu, opt_iter, f);
+    return coap_option_next(opt_iter);
 }
 
+void generate_token(str* the_token, size_t bytes);
+
 coap_context_t* get_context(const char *node, const char *port,
-                            coap_endpoint_t* local_interface);
+                            coap_endpoint_t * interface);
 
 void message_handler(struct coap_context_t  *ctx,
                      const coap_endpoint_t *local_interface,
@@ -64,6 +66,8 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
                                                  unsigned char method,
                                                  coap_list_t *options,
                                                  void* payload, size_t size);
+
+int resolve_address(const char* server, struct sockaddr *dst);
 
 } // namespace io
 } // namespace cppa
