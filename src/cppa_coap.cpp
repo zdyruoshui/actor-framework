@@ -50,9 +50,11 @@
 #include "cppa/io/middleman.hpp"
 #include "cppa/io/remote_actor_proxy.hpp"
 
+using namespace std;
+
 namespace cppa {
   
-void coap_publish(cppa::actor whom, std::uint16_t port, const char* addr) {
+void coap_publish(cppa::actor whom, uint16_t port, const char* addr) {
     coap_set_log_level(LOG_DEBUG);
     actor a{detail::raw_access::unsafe_cast(detail::raw_access::get(whom))};
     CPPA_LOGF_TRACE(CPPA_TARG(whom, to_string) << ", " << CPPA_MARG(aptr, get));
@@ -65,7 +67,7 @@ void coap_publish(cppa::actor whom, std::uint16_t port, const char* addr) {
                                           &interface);
     if (!ctx || !interface) {
         coap_free_context(ctx);
-        throw std::ios_base::failure("Cannot create socket");
+        throw ios_base::failure("Cannot create socket");
     }
     auto mm = get_middleman();
     mm->run_later([mm, ctx, interface] {
@@ -75,7 +77,7 @@ void coap_publish(cppa::actor whom, std::uint16_t port, const char* addr) {
 }
 
 
-actor coap_remote_actor(const char* host, std::uint16_t port) {
+actor coap_remote_actor(const char* host, uint16_t port) {
     auto tmp = detail::coap_remote_actor_impl(host, port);
     actor res;
     // actually safe, because remote_actor_impl throws on type mismatch
@@ -85,7 +87,7 @@ actor coap_remote_actor(const char* host, std::uint16_t port) {
     
 namespace detail {
     
-abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port) {
+abstract_actor_ptr coap_remote_actor_impl(const char* host, uint16_t port) {
     coap_set_log_level(LOG_DEBUG);
     coap_context_t  *ctx{nullptr};
     coap_address_t dst;
@@ -95,7 +97,7 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port) 
     coap_endpoint_t* interface{nullptr};
     auto res = io::resolve_address(host, &dst.addr.sa);
     if (res < 0) {
-        throw std::ios_base::failure("cannot resolve address of remote actor");
+        throw ios_base::failure("cannot resolve address of remote actor");
     }
     dst.size = res;
     dst.addr.sin.sin_port = htons(port);
@@ -116,40 +118,42 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port) 
     }
     if (ctx == nullptr || interface == nullptr) {
         coap_free_context(ctx);
-        throw std::ios_base::failure("Cannot create socket");
+        throw ios_base::failure("Cannot create socket");
     }
 
     auto mm = get_middleman();
 
     // ############### handshake ###############
     // ### send our info ###
-    unsigned char rcv_buf[COAP_MAX_PDU_SIZE];
     util::buffer snd_buf(COAP_MAX_PDU_SIZE,COAP_MAX_PDU_SIZE);
-    ssize_t bytes_read = -1;
     coap_address_t remote;
 
     coap_list_t *optlist = nullptr;
-    // static coap_uri_t uri;
-    // static str proxy = { 0, nullptr };
-    // // static unsigned short proxy_port = COAP_DEFAULT_PORT;
-    // std::string teh_uri("coap://[::1]/");
-    // io::parse_uri(teh_uri.c_str(), proxy, optlist, uri);
+    static coap_uri_t uri;
+    static str proxy = { 0, nullptr };
+    // unsigned short proxy_port = COAP_DEFAULT_PORT;
+    string teh_uri("coap://[::1]/id");
+    io::parse_uri(teh_uri.c_str(), proxy, optlist, uri);
 
-    // char addr[INET6_ADDRSTRLEN];
-    // if (!proxy.length && addrptr
-    //      && (inet_ntop(dst.addr.sa.sa_family, addrptr, addr, sizeof(addr)) != 0)
-    //      && (strlen(addr) != uri.host.length
-    //      || memcmp(addr, uri.host.s, uri.host.length) != 0)) {
-    //      /* add Uri-Host */
-    //     coap_insert(&optlist,
-    //                 io::new_option_node(COAP_OPTION_URI_HOST,
-    //                                     uri.host.length, uri.host.s),
-    //                                     io::order_opts);
-    // }
+    char addr[INET6_ADDRSTRLEN];
+    if (!proxy.length && addrptr
+        && (inet_ntop(dst.addr.sa.sa_family, addrptr, addr, sizeof(addr)) != 0)
+        && (strlen(addr) != uri.host.length
+        || memcmp(addr, uri.host.s, uri.host.length) != 0)) {
+        /* add Uri-Host */
+     coap_insert(&optlist,
+                 io::new_option_node(COAP_OPTION_URI_HOST,
+                                     uri.host.length, uri.host.s),
+                                     io::order_opts);
+    }
 
     // send CON message
     auto pinf = mm->node();
-    std::uint32_t process_id = pinf->process_id();
+    uint32_t process_id = pinf->process_id();
+    cout << "[coap_remote_actor] data: "            << endl
+         << "peer_pid:    " << process_id           << endl
+         << "peer_node_id:" << to_string(pinf->host_id())   << endl
+         << "node_id:     " << to_string(pinf)      << endl;
     binary_serializer bs(&snd_buf);
     bs.write_raw(sizeof(process_id), reinterpret_cast<void*>(&process_id));
     bs.write_raw(pinf->host_id().size(), pinf->host_id().data());
@@ -157,7 +161,7 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port) 
     unsigned char token_data[8];
     str token = {0, token_data};
     io::generate_token(&token);
-    std::cout << "token '" << token.s << "' (" << token.length << " bytes)" << std::endl;
+    cout << "token '" << token.s << "' (" << token.length << " bytes)" << endl;
     pdu->hdr->type = COAP_MESSAGE_CON;
     pdu->hdr->id   = coap_new_message_id(ctx);
     pdu->hdr->code = 0x01; // todo change this
@@ -169,36 +173,83 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port) 
                              COAP_OPTION_LENGTH(*(coap_option *)opt->data),
                              COAP_OPTION_DATA  (*(coap_option *)opt->data));
     }
-    // coap_add_data(pdu, snd_buf.size(),
-    //               reinterpret_cast<unsigned char*>(snd_buf.data()));
-    std::cout << "starting handshake with CON message" << std::endl;
+    coap_add_data(pdu, snd_buf.size(),
+                  reinterpret_cast<unsigned char*>(snd_buf.data()));
+    cout << "[coap_remote_actor] starting handshake with CON message" << endl;
     coap_show_pdu(pdu);
-    /*auto tid = */ coap_send_confirmed(ctx, interface, &dst, pdu);
+    auto tid = coap_send_confirmed(ctx, interface, &dst, pdu);
 
-    //todo: handle retransmit
+    // todo: handle retransmit
 
-    // receive ACK (maybe piggybacked)
+    // receive ACK (may include their ids)
+    unsigned char rcv_buf[COAP_MAX_PDU_SIZE];
     actor_id remote_aid{0};
-    std::uint32_t peer_pid;
+    uint32_t peer_pid;
     node_id::host_id_type peer_node_id;
-    for(bool done = false; !done;) {
-        // ### wait ACK ###
-        // receive ACK + info
-        snd_buf.clear();
+    bool rcvd_ack = false;
+    bool rcvd_ids = false;
+    for(bool done = false; !done; done = rcvd_ack && rcvd_ids) {
+        // ### wait ACK and IDs ###
         coap_address_init(&remote);
-        bytes_read = coap_network_read(interface, &remote,
-                                       rcv_buf, COAP_MAX_PDU_SIZE);
+        auto bytes_read = coap_network_read(interface, &remote,
+                                            rcv_buf, COAP_MAX_PDU_SIZE);
         if (bytes_read < 0) {
-            throw std::runtime_error("waiting for handshake replay, "
+            throw runtime_error("waiting for handshake replay, "
                                      "but received empty packet");
         }
-        binary_deserializer bds(reinterpret_cast<void*>(rcv_buf), bytes_read, nullptr);
-//        bds.read_raw();
+        coap_pdu_t* rcvd_msg = coap_pdu_init(0, 0, 0, bytes_read);
+        if (!coap_pdu_parse(rcv_buf, bytes_read, rcvd_msg)) {
+            cout << "[coap_remote_actor] malformed pdu" << endl;
+            CPPA_LOG_DEBUG("[coap_remote_actor] malformed pdu");
+            continue;
+        }
+        coap_tid_t rcvd_tid;
+        coap_transaction_id(&remote, pdu, &rcvd_tid);
+        cout << "[coap_remote_actor] comparing transaction ids: "
+                  << tid << " =?= " << rcvd_tid << endl;
+        size_t payload_size;
+        unsigned char *payload;
+        if (!rcvd_ack && rcvd_tid == tid) {
+            if (rcvd_msg->hdr->type == COAP_MESSAGE_ACK) {
+                cout << "[coap_remote_actor] message is ACK" << endl;
+                rcvd_ack = true;
+//                coap_remove_from_queue(&ctx->sendqueue, rcvd->id, &sent);
+
+                if (coap_get_data(rcvd_msg, &payload_size, &payload)) {
+                    cout << "[coap_remote_actor] msg has data" << endl;
+//                    binary_deserializer bds(reinterpret_cast<void*>(payload),
+//                                            payload_size, nullptr);
+//                    bds.read_raw();
+                    memcpy(&peer_pid, payload, sizeof(uint32_t));
+                    memcpy(peer_node_id.data(), payload + sizeof(uint32_t),
+                           node_id::host_id_size);
+                    cout << "[coap_remote_actor] data: "
+                         << "peer_pid:"     << peer_pid
+                         << "peer_node_id:" << to_string(peer_node_id)
+                         << endl;
+                }
+                else {
+                    cout << "[coap_remote_actor] has no data" << endl;
+                }
+            }
+            else {
+                cout << "[coap_remote_actor] message is not ACK (unhandled)"
+                     << endl;
+//                binary_deserializer bds(reinterpret_cast<void*>(rcv_buf),
+//                                        bytes_read, nullptr);
+            }
+        }
+        else {
+
+        }
+
         // ### if piggy backed ###
         // read othres info
         // ### else wait for their info ###
         // ### send ACK ###
+        coap_delete_pdu(rcvd_msg);
     }
+    snd_buf.clear();
     // #########################################
 
     auto new_peer = new io::transaction_based_peer(mm, ctx, interface, nullptr);
@@ -210,8 +261,8 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port) 
         return ptr;
     }
     struct remote_actor_result { remote_actor_result* next; actor value; };
-    std::mutex qmtx;
-    std::condition_variable qcv;
+    mutex qmtx;
+    condition_variable qcv;
     intrusive::single_reader_queue<remote_actor_result> q;
     mm->run_later([mm, /* io,*/ pinfptr, remote_aid, &q, &qmtx, &qcv, &new_peer] {
         CPPA_LOGC_TRACE("cppa", "remote_actor$create_connection", "");
@@ -220,7 +271,7 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port) 
         auto res = mm->get_namespace().get_or_put(pinfptr, remote_aid);
         q.synchronized_enqueue(qmtx, qcv, new remote_actor_result{0, res});
     });
-    std::unique_ptr<remote_actor_result> result(q.synchronized_pop(qmtx, qcv));
+    unique_ptr<remote_actor_result> result(q.synchronized_pop(qmtx, qcv));
     CPPA_LOGF_DEBUG(CPPA_MARG(result, get));
     return raw_access::get(result->value);
 }

@@ -67,12 +67,19 @@ void generate_token(str* token, size_t bytes = 8);
 coap_context_t* get_context(const char *node, const char *port,
                             coap_endpoint_t **interface);
 
-void message_handler(struct coap_context_t  *ctx,
-                     const coap_endpoint_t *local_interface,
+void request_handler(struct coap_context_t  *ctx,
+                     const coap_endpoint_t *interface,
                      const coap_address_t *remote,
                      coap_pdu_t *sent,
                      coap_pdu_t *received,
                      const coap_tid_t id);
+
+void response_handler(struct coap_context_t  *ctx,
+                      const coap_endpoint_t *interface,
+                      const coap_address_t *remote,
+                      coap_pdu_t *sent,
+                      coap_pdu_t *received,
+                      const coap_tid_t id);
 
 int order_opts(void *a, void *b);
 

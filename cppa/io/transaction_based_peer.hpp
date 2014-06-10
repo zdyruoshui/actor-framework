@@ -62,12 +62,18 @@ class transaction_based_peer : public peer {
     };
 
     friend class middleman_impl;
-    friend void message_handler(struct coap_context_t  *ctx,
-                                const coap_endpoint_t *local_interface,
+    friend void request_handler(struct coap_context_t  *ctx,
+                                const coap_endpoint_t *interface,
                                 const coap_address_t *remote,
                                 coap_pdu_t *sent,
                                 coap_pdu_t *received,
                                 const coap_tid_t id);
+    friend void response_handler(struct coap_context_t  *ctx,
+                                 const coap_endpoint_t *interface,
+                                 const coap_address_t *remote,
+                                 coap_pdu_t *sent,
+                                 coap_pdu_t *received,
+                                 const coap_tid_t id);
 
     friend coap_request new_request(coap_context_t *ctx,
                                     unsigned char method,
