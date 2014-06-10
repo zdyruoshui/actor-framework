@@ -102,8 +102,8 @@ class transaction_based_peer : public peer {
     enum read_state {
         // connection just established; waiting for process information
         wait_for_process_info,
-        // wait for the size of the next message
-        wait_for_msg_size,
+//        // wait for the size of the next message
+//        wait_for_msg_size,
         // currently reading a message
         read_message
     };

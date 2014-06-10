@@ -50,6 +50,8 @@ transaction_based_peer::coap_request::coap_request()
 
 transaction_based_peer::coap_request::~coap_request() {
     coap_delete_list(options);
+//    coap_free_context(ctx);
+//    coap_free_endpoint(m_interface);
 }
 
 transaction_based_peer::transaction_based_peer(middleman* parent,
@@ -58,7 +60,7 @@ transaction_based_peer::transaction_based_peer(middleman* parent,
                                                node_id_ptr peer_ptr)
         : super{interface->handle, interface->handle, peer_ptr}
         , m_parent{parent}
-        , m_state{(peer_ptr) ? wait_for_msg_size : wait_for_process_info}
+        , m_state{(peer_ptr) ? read_message : wait_for_process_info}
         , m_ctx{ctx}
         , m_default_msgtype{COAP_MESSAGE_CON}
         , m_default_method{1}
@@ -92,6 +94,7 @@ continue_reading_result transaction_based_peer::continue_reading() {
     if (bytes_read < 0) {
         CPPA_LOG_ERROR("coap_read: recvfrom\n");
     } else {
+        std::cout << "[continue_reading] rcvd " << bytes_read << " bytes" << std::endl;
         coap_handle_message(m_ctx, m_interface, &remote, buf, (size_t)bytes_read);
     }
     return continue_reading_result::continue_later;
@@ -156,6 +159,8 @@ void transaction_based_peer::enqueue(msg_hdr_cref hdr, const any_tuple& msg) {
            - static_cast<std::uint32_t>(sizeof(std::uint32_t));
     // update size in buffer
     memcpy(wbuf.offset_data(before), &size, sizeof(std::uint32_t));
+    // todo send message
+    // match to destination somehow
 }
 
 void transaction_based_peer::dispose() {

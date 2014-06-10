@@ -35,11 +35,17 @@
 
 namespace cppa {
   
-void publish(cppa::actor whom, std::uint16_t port, const char* addr);
+void coap_publish(cppa::actor whom, std::uint16_t port, const char* addr = nullptr);
 
-actor remote_actor(const char* host, std::uint16_t port);
+actor coap_remote_actor(const char* host, std::uint16_t port);
   
-}
+    
+namespace detail {
+    
+    abstract_actor_ptr coap_remote_actor_impl(const char* host, std::uint16_t port);
+    
+} // namespace detail
+} // namespace cppa
 
 
 #endif // CPPA_COAP_HPP
