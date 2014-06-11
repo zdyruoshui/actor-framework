@@ -121,7 +121,7 @@ void request_handler(struct coap_context_t  *ctx,
             CPPA_LOGF_DEBUG("got RST\n");
             return;
         default:
-            // other messages do not require special responses
+            // other messages do not require special treatment
             break;
     }
     // Check if block option is set.
@@ -145,9 +145,15 @@ void request_handler(struct coap_context_t  *ctx,
                 CPPA_LOGF_ERROR("exception during read_message: "
                                 << detail::demangle(typeid(e))
                                 << ", what(): " << e.what());
+                cout << "[request_handler] exception during read_message: "
+                     << detail::demangle(typeid(e))
+                     << ", what(): " << e.what() << endl;
+                return;
             }
             CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
                                              << " " << to_string(msg));
+            cout << "[request_handler] deserialized: " << to_string(hdr) << endl
+                 << "                                " << to_string(msg) << endl;
             match(msg) (
                 on(atom("HANDSHAKE"), arg_match) >> [&](node_id_ptr node) {
                     cout << "[request_handler] recieved handshake message '"
@@ -158,15 +164,17 @@ void request_handler(struct coap_context_t  *ctx,
                                         "from the same node");
                         return;
                     }
-                    if (ptr->m_known_nodes.find(node) == ptr->m_known_nodes.end()) {
+                    if (ptr->m_known_nodes.find(*node) == ptr->m_known_nodes.end()) {
                         coap_address_t addr;
                         coap_address_init(&addr);
                         memcpy(&addr, remote, sizeof(coap_address_t));
-                        ptr->m_known_nodes.emplace(node, move(addr));
+                        ptr->m_known_nodes.emplace(*node, move(addr));
                     }
                     // answer handshake
                     util::buffer snd_buf(COAP_MAX_PDU_SIZE, COAP_MAX_PDU_SIZE);
-                    binary_serializer bs(&snd_buf, &(ptr->m_parent->get_namespace()));
+                    binary_serializer bs(&snd_buf,
+                                         &(ptr->m_parent->get_namespace()),
+                                         nullptr);
                     bs << message_header{};
                     bs << make_any_tuple(atom("HANDSHAKE"), ptr->m_parent->node());
                     ptr->send_coap_message(remote,
@@ -194,7 +202,9 @@ void request_handler(struct coap_context_t  *ctx,
                     CPPA_LOGF_DEBUG("[request_handler] received TYPE msg");
                 },
                 others() >> [&] {
-                    hdr.deliver(move(msg));
+                    ptr->m_parent->run_later([hdr, msg]{
+                        hdr.deliver(move(msg));
+                    });
                 }
             );
         }
@@ -498,7 +508,6 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
                                                  unsigned char method,
                                                  coap_list_t *options,
                                                  void *payload, size_t size) {
-    cout << "[new_request] new request with " << size << " payload"  << endl;
     auto ptr = reinterpret_cast<transaction_based_peer*>(ctx->app);
     transaction_based_peer::coap_request req;
     coap_pdu_t*  pdu{nullptr};
@@ -534,7 +543,7 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
     if (!coap_add_token(pdu, req.the_token.length, req.the_token.s)) {
         debug("cannot add token to request\n");
     }
-    coap_show_pdu(pdu);
+//    coap_show_pdu(pdu);
     auto add_options = [&pdu](coap_list_t* options) {
         for (coap_list_t* opt = options; opt; opt = opt->next) {
             coap_add_option(pdu,

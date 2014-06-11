@@ -37,6 +37,7 @@
 #include "coap.h"
 
 #include "cppa/io/peer.hpp"
+#include "cppa/cppa_coap.hpp"
 
 namespace cppa {
 namespace io {
@@ -79,6 +80,9 @@ class transaction_based_peer : public peer {
                                     unsigned char method,
                                     coap_list_t *options,
                                     void *payload, size_t size);
+
+    friend abstract_actor_ptr detail::coap_remote_actor_impl(const char* host,
+                                                             uint16_t port);
 
  public:
  
@@ -138,7 +142,7 @@ class transaction_based_peer : public peer {
     std::atomic<bool> m_ready;
     coap_endpoint_t* m_interface;
     coap_list_t* m_options;
-    std::map<node_id_ptr,coap_address_t> m_known_nodes;
+    std::map<node_id,coap_address_t> m_known_nodes;
     
 
     void monitor(const actor_addr& sender, const node_id_ptr& node, actor_id aid);
