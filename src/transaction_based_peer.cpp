@@ -157,11 +157,10 @@ continue_reading_result transaction_based_peer::continue_reading() {
 //        debug("** received %d bytes from %s:\n", (int)msg_len, addr);
     }
     coap_show_pdu(node->pdu);
-    // todo: handle results (was coap_dispatch( ... ))
-
-    // coap_dispatch(coap_context_t *context, coap_queue_t *rcvd)
+    // replaced call to coap_dispatch(coap_context_t *context, coap_queue_t *rcvd)
+    // with the following
     coap_queue_t *sent = NULL;
-    coap_pdu_t *response;
+//    coap_pdu_t *response;
     coap_opt_filter_t opt_filter;
     auto cleanup = [&]() {
         coap_delete_node(sent);
@@ -338,7 +337,7 @@ void transaction_based_peer::dispose() {
     delete this;
 }
 
-void transaction_based_peer::send_coap_message(coap_address_t* dst,
+void transaction_based_peer::send_coap_message(const coap_address_t* dst,
                                                void* payload, size_t size,
                                                coap_list_t* options,
                                                int type, unsigned char method) {

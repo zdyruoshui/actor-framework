@@ -101,122 +101,102 @@ coap_context_t* get_context(const char *node, const char *port,
 }
 
 void request_handler(struct coap_context_t  *ctx,
-                     const coap_endpoint_t *interface,
+                     const coap_endpoint_t *,
                      const coap_address_t *remote,
-                     coap_pdu_t *sent,
+                     coap_pdu_t *,
                      coap_pdu_t *received,
-                     const coap_tid_t id) {
-
+                     const coap_tid_t) {
     auto ptr = reinterpret_cast<transaction_based_peer*>(ctx->app);
     coap_pdu_t *pdu = nullptr;
     coap_opt_t *block_opt;
     coap_opt_iterator_t opt_iter;
-    unsigned char buf[4];
-    size_t len;
-    unsigned char *databuf;
-    coap_tid_t tid;
-
-    cout << "process incoming request: "
-         << (received->hdr->code >> 5)
-         << "." << setw(2) << setfill('0')
-         << (received->hdr->code & 0x1F) << endl;
-
-
+    // send ACK to CON messages
     switch (received->hdr->type) {
-    case COAP_MESSAGE_CON:
-        /* acknowledge received response if confirmable (TODO: check Token) */
-        coap_send_ack(ctx, ptr->m_interface, remote, received);
-        break;
-    case COAP_MESSAGE_RST:
-        info("got RST\n");
-        return;
-    default:
-        ;
+        case COAP_MESSAGE_CON:
+            // (from libcoap)
+            // acknowledge received response if confirmable (TODO: check Token)
+            coap_send_ack(ctx, ptr->m_interface, remote, received);
+            break;
+        case COAP_MESSAGE_RST:
+            CPPA_LOGF_DEBUG("got RST\n");
+            return;
+        default:
+            // other messages do not require special responses
+            break;
     }
-
-//    // output the received data, if any
-//    if (received->hdr->code == COAP_RESPONSE_CODE(205)) {
-//        CPPA_LOGF_DEBUG("[request handler] header code 205");
-
-    // Got some data, check if block option is set.
+    // Check if block option is set.
     block_opt = get_block(received, &opt_iter);
     if (!block_opt) { // no block option set
-        cout << "[message handler] message without block opt" << endl;
+        cout << "[request_handler] message without block opt" << endl;
+        size_t len;
+        unsigned char *databuf;
         if (coap_get_data(received, &len, &databuf)) {
-            cout << "[message handler] incoming data" << endl;
-            switch(ptr->m_state) {
-                case transaction_based_peer::read_state::wait_for_process_info: {
-                    cout << "[message handler] handshake" << endl;
-                    uint32_t process_id;
-                    node_id::host_id_type host_id;
-                    binary_deserializer bds(databuf, len, nullptr);
-                    bds.read_raw(sizeof(uint32_t), &process_id);
-                    bds.read_raw(node_id::host_id_size, host_id.data());
-//                    memcpy(&process_id, databuf, sizeof(uint32_t));
-//                    memcpy(host_id.data(), databuf + sizeof(uint32_t),
-//                           node_id::host_id_size);
-                    node_id new_dude(process_id, host_id);
-                    cout << "[request_handler] data: "              << endl
-                         << "peer_pid:    " << process_id           << endl
-                         << "peer_node_id:" << to_string(host_id)   << endl
-                         << "node_id:     " << to_string(new_dude)  << endl;
-                    ptr->set_node(new node_id(process_id, host_id));
+            cout << "[request_handler] incoming data" << endl;
+            message_header hdr;
+            any_tuple msg;
+            binary_deserializer bd(databuf, len,
+                                   &(ptr->m_parent->get_namespace()),
+                                   nullptr);
+            try {
+                ptr->m_meta_hdr->deserialize(&hdr, &bd);
+                ptr->m_meta_msg->deserialize(&msg, &bd);
+            }
+            catch (exception& e) {
+                CPPA_LOGF_ERROR("exception during read_message: "
+                                << detail::demangle(typeid(e))
+                                << ", what(): " << e.what());
+            }
+            CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
+                                             << " " << to_string(msg));
+            match(msg) (
+                on(atom("HANDSHAKE"), arg_match) >> [&](node_id_ptr node) {
+                    cout << "[request_handler] recieved handshake message '"
+                         <<  to_string(node) << "'" << endl;
+                    ptr->set_node(node);
                     if (!ptr->m_parent->register_peer(ptr->node(), ptr)) {
                         CPPA_LOGF_ERROR("multiple incoming connections "
                                         "from the same node");
                         return;
                     }
-                    // initialization done
-                    ptr->m_state = transaction_based_peer::read_state::read_message;
-                    ptr->m_rd_buf.clear();
-//                        ptr->m_rd_buf.final_size(sizeof(uint32_t));
-                    // send back own information with ACK
-                    break;
-                }
-                case transaction_based_peer::read_state::read_message: {
-                    message_header hdr;
-                    any_tuple msg;
-                    binary_deserializer bd(databuf, len,
-                                           &(ptr->m_parent->get_namespace()),
-                                           nullptr);
-                    // todo: not sure about the nullptr
-                    try {
-                        ptr->m_meta_hdr->deserialize(&hdr, &bd);
-                        ptr->m_meta_msg->deserialize(&msg, &bd);
+                    if (ptr->m_known_nodes.find(node) == ptr->m_known_nodes.end()) {
+                        coap_address_t addr;
+                        coap_address_init(&addr);
+                        memcpy(&addr, remote, sizeof(coap_address_t));
+                        ptr->m_known_nodes.emplace(node, move(addr));
                     }
-                    catch (exception& e) {
-                        CPPA_LOGF_ERROR("exception during read_message: "
-                                        << detail::demangle(typeid(e))
-                                        << ", what(): " << e.what());
-                    }
-                    CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
-                                                     << " " << to_string(msg));
-                    match(msg) (
-                        on(atom("MONITOR"), arg_match) >> [&](const node_id_ptr&,
-                                                              actor_id) {
-                            CPPA_LOGF_DEBUG("[message_handler] received MONITOR msg");
-                        },
-                        on(atom("KILL_PROXY"), arg_match) >> [&](const node_id_ptr&,
-                                                                 actor_id, uint32_t) {
-                            CPPA_LOGF_DEBUG("[message_handler] received KILL msg");
-                        },
-                        on(atom("LINK"), arg_match) >> [&](const actor_addr&) {
-                            CPPA_LOGF_DEBUG("[message_handler] received LINK msg");
-                        },
-                        on(atom("UNLINK"), arg_match) >> [&](const actor_addr&) {
-                            CPPA_LOGF_DEBUG("[message_handler] received UNLINK msg");
-                        },
-                        on(atom("ADD_TYPE"), arg_match) >> [&](uint32_t,
-                                                               const string&) {
-                            CPPA_LOGF_DEBUG("[message_handler] received TYPE msg");
-                        },
-                        others() >> [&] {
-                            hdr.deliver(move(msg));
-                        }
-                    );
-                    break;
+                    // answer handshake
+                    util::buffer snd_buf(COAP_MAX_PDU_SIZE, COAP_MAX_PDU_SIZE);
+                    binary_serializer bs(&snd_buf, &(ptr->m_parent->get_namespace()));
+                    bs << message_header{};
+                    bs << make_any_tuple(atom("HANDSHAKE"), ptr->m_parent->node());
+                    ptr->send_coap_message(remote,
+                                           snd_buf.data(), snd_buf.size(),
+                                           nullptr,
+                                           COAP_MESSAGE_CON, received->hdr->code);
+                    cout << "[request_handler] sent answer" << endl;
+                },
+                on(atom("MONITOR"), arg_match) >> [&](const node_id_ptr&,
+                                                      actor_id) {
+                    CPPA_LOGF_DEBUG("[request_handler] received MONITOR msg");
+                },
+                on(atom("KILL_PROXY"), arg_match) >> [&](const node_id_ptr&,
+                                                         actor_id, uint32_t) {
+                    CPPA_LOGF_DEBUG("[request_handler] received KILL msg");
+                },
+                on(atom("LINK"), arg_match) >> [&](const actor_addr&) {
+                    CPPA_LOGF_DEBUG("[request_handler] received LINK msg");
+                },
+                on(atom("UNLINK"), arg_match) >> [&](const actor_addr&) {
+                    CPPA_LOGF_DEBUG("[request_handler] received UNLINK msg");
+                },
+                on(atom("ADD_TYPE"), arg_match) >> [&](uint32_t,
+                                                       const string&) {
+                    CPPA_LOGF_DEBUG("[request_handler] received TYPE msg");
+                },
+                others() >> [&] {
+                    hdr.deliver(move(msg));
                 }
-            }
+            );
         }
     }
     else {
@@ -224,20 +204,6 @@ void request_handler(struct coap_context_t  *ctx,
                         "block option messages");
         return;
     }
-//    } else {			/* no 2.05 */
-//        CPPA_LOGF_DEBUG("[request handler] header code no 205");
-//        // check if an error was signaled and output payload if so
-//        if (COAP_RESPONSE_CLASS(received->hdr->code) >= 4) {
-//            CPPA_LOGF_ERROR((received->hdr->code >> 5) << "." <<
-//                            setw(2) << setfill('0') <<
-//                            (received->hdr->code & 0x1F));
-//            if (coap_get_data(received, &len, &databuf)) {
-//                cout << "[message handler] error + data -> unhandled"
-//                          << endl;
-//            }
-//            fprintf(stderr, "\n");
-//        }
-//    }
     coap_delete_pdu(pdu);
 }
 
@@ -246,7 +212,7 @@ void response_handler(struct coap_context_t  *ctx,
                       const coap_address_t *remote,
                       coap_pdu_t *sent,
                       coap_pdu_t *received,
-                      const coap_tid_t id) {
+                      const coap_tid_t) {
 
     auto ptr = reinterpret_cast<transaction_based_peer*>(ctx->app);
     coap_pdu_t *pdu = nullptr;
@@ -532,52 +498,43 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
                                                  unsigned char method,
                                                  coap_list_t *options,
                                                  void *payload, size_t size) {
+    cout << "[new_request] new request with " << size << " payload"  << endl;
     auto ptr = reinterpret_cast<transaction_based_peer*>(ctx->app);
-
     transaction_based_peer::coap_request req;
     coap_pdu_t*  pdu{nullptr};
-
     req.data = payload;
     req.size = size;
-
-    if (size) {
-        req.block.num = size;
-        req.block.szx = (coap_fls(size >> 4) - 1) & 0x07;
-        req.flags |= FLAGS_BLOCK;
-
-        static unsigned char buf[4];	/* hack: temporarily take encoded bytes */
-        unsigned short opt;
-
-        if (method != COAP_REQUEST_DELETE) {
-            opt = method == COAP_REQUEST_GET ? COAP_OPTION_BLOCK2 : COAP_OPTION_BLOCK1;
-
-            coap_insert(
-                &req.options,
-                new_option_node(
-                    opt,
-                    coap_encode_var_bytes(buf, (req.block.num << 4 | req.block.szx)),
-                    buf
-                ),
-                order_opts
-            );
-        }
-    }
-
+    // currently on block messages
+//    if (size) {
+//        req.block.num = size;
+//        req.block.szx = (coap_fls(size >> 4) - 1) & 0x07;
+//        req.flags |= FLAGS_BLOCK;
+//        unsigned char buf[4];	/* hack: temporarily take encoded bytes */
+//        unsigned short opt;
+//        if (method != COAP_REQUEST_DELETE) {
+//            opt = method == COAP_REQUEST_GET ? COAP_OPTION_BLOCK2 : COAP_OPTION_BLOCK1;
+//            coap_insert(
+//                &req.options,
+//                new_option_node(
+//                    opt,
+//                    coap_encode_var_bytes(buf, (req.block.num << 4 | req.block.szx)),
+//                    buf
+//                ),
+//                order_opts
+//            );
+//        }
+//    }
     if (!(pdu = coap_new_pdu())) {
         throw runtime_error("failed to create coap pdu");
     }
-
     pdu->hdr->type = ptr->m_default_msgtype;
     pdu->hdr->id   = coap_new_message_id(ptr->m_ctx);
     pdu->hdr->code = method;
-
     pdu->hdr->token_length = req.the_token.length;
     if (!coap_add_token(pdu, req.the_token.length, req.the_token.s)) {
         debug("cannot add token to request\n");
     }
-
     coap_show_pdu(pdu);
-
     auto add_options = [&pdu](coap_list_t* options) {
         for (coap_list_t* opt = options; opt; opt = opt->next) {
             coap_add_option(pdu,
@@ -586,20 +543,20 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
                             COAP_OPTION_DATA(*(coap_option *)opt->data));
         }
     };
-
     add_options(options);
     add_options(req.options);
-
-    if (size) {
-        if ((req.flags & FLAGS_BLOCK) == 0) {
-            coap_add_data(pdu, size,
-                          reinterpret_cast<unsigned char*>(payload));
-        }
-        else {
-            coap_add_block(pdu, size,
-                           reinterpret_cast<unsigned char*>(payload),
-                           req.block.num, req.block.szx);
-        }
+    if (size > 0) {
+        coap_add_data(pdu, size,
+                      reinterpret_cast<unsigned char*>(payload));
+//        if ((req.flags & FLAGS_BLOCK) == 0) {
+//            coap_add_data(pdu, size,
+//                          reinterpret_cast<unsigned char*>(payload));
+//        }
+//        else {
+//            coap_add_block(pdu, size,
+//                           reinterpret_cast<unsigned char*>(payload),
+//                           req.block.num, req.block.szx);
+//        }
     }
 
     req.pdu = pdu;

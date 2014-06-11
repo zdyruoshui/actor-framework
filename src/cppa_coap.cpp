@@ -120,67 +120,29 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, uint16_t port) {
         coap_free_context(ctx);
         throw ios_base::failure("Cannot create socket");
     }
-
     auto mm = get_middleman();
-
-    // ############### handshake ###############
-    // ### send our info ###
-    util::buffer snd_buf(COAP_MAX_PDU_SIZE,COAP_MAX_PDU_SIZE);
+    // (handshake) send our node_id as CON message
+    util::buffer snd_buf(COAP_MAX_PDU_SIZE, COAP_MAX_PDU_SIZE);
     coap_address_t remote;
-
-    coap_list_t *optlist = nullptr;
-    static coap_uri_t uri;
-    static str proxy = { 0, nullptr };
-    // unsigned short proxy_port = COAP_DEFAULT_PORT;
-    string teh_uri("coap://[::1]/id");
-    io::parse_uri(teh_uri.c_str(), proxy, optlist, uri);
-
-    char addr[INET6_ADDRSTRLEN];
-    if (!proxy.length && addrptr
-        && (inet_ntop(dst.addr.sa.sa_family, addrptr, addr, sizeof(addr)) != 0)
-        && (strlen(addr) != uri.host.length
-        || memcmp(addr, uri.host.s, uri.host.length) != 0)) {
-        /* add Uri-Host */
-     coap_insert(&optlist,
-                 io::new_option_node(COAP_OPTION_URI_HOST,
-                                     uri.host.length, uri.host.s),
-                                     io::order_opts);
-    }
-
-    // send CON message
-    auto pinf = mm->node();
-    uint32_t process_id = pinf->process_id();
-    cout << "[coap_remote_actor] data: "            << endl
-         << "peer_pid:    " << process_id           << endl
-         << "peer_node_id:" << to_string(pinf->host_id())   << endl
-         << "node_id:     " << to_string(pinf)      << endl;
-    binary_serializer bs(&snd_buf);
-    bs.write_raw(sizeof(process_id), reinterpret_cast<void*>(&process_id));
-    bs.write_raw(pinf->host_id().size(), pinf->host_id().data());
+    binary_serializer bs(&snd_buf, &(mm->get_namespace()));
+    bs << message_header{};
+    bs << make_any_tuple(atom("HANDSHAKE"), mm->node());
     auto pdu = coap_new_pdu();
     unsigned char token_data[8];
     str token = {0, token_data};
     io::generate_token(&token);
-    cout << "token '" << token.s << "' (" << token.length << " bytes)" << endl;
     pdu->hdr->type = COAP_MESSAGE_CON;
     pdu->hdr->id   = coap_new_message_id(ctx);
     pdu->hdr->code = 0x01; // todo change this
     pdu->hdr->token_length = token.length;
     coap_add_token(pdu, token.length, token.s);
     coap_show_pdu(pdu);
-    for (coap_list_t* opt = optlist; opt; opt = opt->next) {
-        coap_add_option(pdu, COAP_OPTION_KEY   (*(coap_option *)opt->data),
-                             COAP_OPTION_LENGTH(*(coap_option *)opt->data),
-                             COAP_OPTION_DATA  (*(coap_option *)opt->data));
-    }
     coap_add_data(pdu, snd_buf.size(),
                   reinterpret_cast<unsigned char*>(snd_buf.data()));
     cout << "[coap_remote_actor] starting handshake with CON message" << endl;
     coap_show_pdu(pdu);
     auto tid = coap_send_confirmed(ctx, interface, &dst, pdu);
-
-    // todo: handle retransmit
-
+    // TODO: handle retransmit
     // receive ACK (may include their ids)
     unsigned char rcv_buf[COAP_MAX_PDU_SIZE];
     actor_id remote_aid{0};
@@ -209,52 +171,57 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, uint16_t port) {
                   << tid << " =?= " << rcvd_tid << endl;
         size_t payload_size;
         unsigned char *payload;
-        if (!rcvd_ack && rcvd_tid == tid) {
-            if (rcvd_msg->hdr->type == COAP_MESSAGE_ACK) {
-                cout << "[coap_remote_actor] message is ACK" << endl;
+        const uniform_type_info* m_meta_hdr = uniform_typeid<message_header>();
+        const uniform_type_info* m_meta_msg = uniform_typeid<any_tuple>();
+        if (rcvd_msg->hdr->type == COAP_MESSAGE_ACK) {
+            cout << "[coap_remote_actor] received ACK" << endl;
+            if (!rcvd_ack && rcvd_tid == tid) {
                 rcvd_ack = true;
-//                coap_remove_from_queue(&ctx->sendqueue, rcvd->id, &sent);
-
-                if (coap_get_data(rcvd_msg, &payload_size, &payload)) {
-                    cout << "[coap_remote_actor] msg has data" << endl;
-//                    binary_deserializer bds(reinterpret_cast<void*>(payload),
-//                                            payload_size, nullptr);
-//                    bds.read_raw();
-                    memcpy(&peer_pid, payload, sizeof(uint32_t));
-                    memcpy(peer_node_id.data(), payload + sizeof(uint32_t),
-                           node_id::host_id_size);
-                    cout << "[coap_remote_actor] data: "
-                         << "peer_pid:"     << peer_pid
-                         << "peer_node_id:" << to_string(peer_node_id)
+            }
+        }
+        if (coap_get_data(rcvd_msg, &payload_size, &payload)) {
+            cout << "[coap_remote_actor] msg has data" << endl;
+            message_header hdr;
+            any_tuple msg;
+            binary_deserializer bd(payload, payload_size,
+                                   &(mm->get_namespace()),
+                                   nullptr);
+            try {
+                m_meta_hdr->deserialize(&hdr, &bd);
+                m_meta_msg->deserialize(&msg, &bd);
+            }
+            catch (exception& e) {
+                CPPA_LOGF_ERROR("exception during read_message: "
+                                << detail::demangle(typeid(e))
+                                << ", what(): " << e.what());
+                continue;
+            }
+            CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
+                                             << " " << to_string(msg));
+            match(msg) (
+                on(atom("HANDSHAKE"), arg_match) >> [&](node_id_ptr node) {
+                    cout << "[coap_remote_actor] received node '"
+                         << to_string(node ) << "'" << endl;
+                    peer_pid = node->process_id();
+                    peer_node_id = node->host_id();
+                    rcvd_ids = true;
+                },
+                others() >> []() {
+                    cout << "[coap_remote_actor] received unknown payload"
                          << endl;
-                }
-                else {
-                    cout << "[coap_remote_actor] has no data" << endl;
-                }
-            }
-            else {
-                cout << "[coap_remote_actor] message is not ACK (unhandled)"
-                     << endl;
-//                binary_deserializer bds(reinterpret_cast<void*>(rcv_buf),
-//                                        bytes_read, nullptr);
-            }
+                });
         }
         else {
-
+            cout << "[coap_remote_actor] has no data" << endl;
         }
-
-        // ### if piggy backed ###
-        // read othres info
-        // ### else wait for their info ###
-        // ### send ACK ###
+        // todo handle retransmit
         coap_delete_pdu(rcvd_msg);
     }
     snd_buf.clear();
     // #########################################
-
     auto new_peer = new io::transaction_based_peer(mm, ctx, interface, nullptr);
     auto pinfptr = make_counted<node_id>(peer_pid, peer_node_id);
-    if (*pinf == *pinfptr) {
+    if (*(mm->node()) == *pinfptr) {
         // this is a local actor, not a remote actor
         CPPA_LOGF_WARNING("remote_actor() called to access a local actor");
         auto ptr = get_actor_registry()->get(remote_aid);
@@ -264,7 +231,7 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, uint16_t port) {
     mutex qmtx;
     condition_variable qcv;
     intrusive::single_reader_queue<remote_actor_result> q;
-    mm->run_later([mm, /* io,*/ pinfptr, remote_aid, &q, &qmtx, &qcv, &new_peer] {
+    mm->run_later([mm, pinfptr, remote_aid, &q, &qmtx, &qcv, &new_peer] {
         CPPA_LOGC_TRACE("cppa", "remote_actor$create_connection", "");
         // todo: check if peer exists
         mm->continue_reader(new_peer);

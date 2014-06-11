@@ -138,6 +138,7 @@ class transaction_based_peer : public peer {
     std::atomic<bool> m_ready;
     coap_endpoint_t* m_interface;
     coap_list_t* m_options;
+    std::map<node_id_ptr,coap_address_t> m_known_nodes;
     
 
     void monitor(const actor_addr& sender, const node_id_ptr& node, actor_id aid);
@@ -148,7 +149,7 @@ class transaction_based_peer : public peer {
 
     void unlink(const actor_addr& sender, const actor_addr& ptr);
     
-    void send_coap_message(coap_address_t* dst,
+    void send_coap_message(const coap_address_t* dst,
                            void* payload, size_t size,
                            coap_list_t* options,
                            int type, unsigned char method);
