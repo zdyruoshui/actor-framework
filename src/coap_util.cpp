@@ -152,8 +152,8 @@ void request_handler(struct coap_context_t  *ctx,
             }
             CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
                                              << " " << to_string(msg));
-            cout << "[request_handler] deserialized: " << to_string(hdr) << endl
-                 << "                                " << to_string(msg) << endl;
+            cout << "[request_handler] deserialized: "
+                 << to_string(hdr) << ", " << to_string(msg) << endl;
             match(msg) (
                 on(atom("HANDSHAKE"), arg_match) >> [&](node_id_ptr node) {
                     cout << "[request_handler] recieved handshake message '"
@@ -176,7 +176,8 @@ void request_handler(struct coap_context_t  *ctx,
                                          &(ptr->m_parent->get_namespace()),
                                          nullptr);
                     bs << message_header{};
-                    bs << make_any_tuple(atom("HANDSHAKE"), ptr->m_parent->node());
+                    bs << make_any_tuple(atom("HANDSHAKE"), ptr->m_actor,
+                                         ptr->m_parent->node());
                     ptr->send_coap_message(remote,
                                            snd_buf.data(), snd_buf.size(),
                                            nullptr,
@@ -202,9 +203,11 @@ void request_handler(struct coap_context_t  *ctx,
                     CPPA_LOGF_DEBUG("[request_handler] received TYPE msg");
                 },
                 others() >> [&] {
-                    ptr->m_parent->run_later([hdr, msg]{
-                        hdr.deliver(move(msg));
-                    });
+                    cout << "[request_handler] delivering message" << endl;
+                    hdr.deliver(move(msg));
+//                    ptr->m_parent->run_later([hdr, msg]{
+//                        hdr.deliver(move(msg));
+//                    });
                 }
             );
         }

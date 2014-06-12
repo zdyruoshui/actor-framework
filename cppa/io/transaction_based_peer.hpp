@@ -89,6 +89,12 @@ class transaction_based_peer : public peer {
     transaction_based_peer(middleman* parent,
                            coap_context_t* ctx,
                            coap_endpoint_t* interface,
+                           node_id_ptr peer_ptr,
+                           actor_id aid);
+
+    transaction_based_peer(middleman* parent,
+                           coap_context_t* ctx,
+                           coap_endpoint_t* interface,
                            node_id_ptr peer_ptr);
     
     void enqueue(msg_hdr_cref hdr, const any_tuple& msg) override;
@@ -143,7 +149,8 @@ class transaction_based_peer : public peer {
     coap_endpoint_t* m_interface;
     coap_list_t* m_options;
     std::map<node_id,coap_address_t> m_known_nodes;
-    
+
+    actor_id m_actor;
 
     void monitor(const actor_addr& sender, const node_id_ptr& node, actor_id aid);
 

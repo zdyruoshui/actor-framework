@@ -70,8 +70,9 @@ void coap_publish(cppa::actor whom, uint16_t port, const char* addr) {
         throw ios_base::failure("Cannot create socket");
     }
     auto mm = get_middleman();
-    mm->run_later([mm, ctx, interface] {
-        auto new_peer = new io::transaction_based_peer(mm, ctx, interface, nullptr);
+    mm->run_later([mm, ctx, interface, whom] {
+        auto new_peer = new io::transaction_based_peer(mm, ctx, interface,
+                                                       nullptr, whom.address().id());
         get_middleman()->continue_reader(new_peer);
     });
 }
@@ -136,11 +137,9 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, uint16_t port) {
     pdu->hdr->code = 0x01; // todo change this
     pdu->hdr->token_length = token.length;
     coap_add_token(pdu, token.length, token.s);
-    coap_show_pdu(pdu);
     coap_add_data(pdu, snd_buf.size(),
                   reinterpret_cast<unsigned char*>(snd_buf.data()));
     cout << "[coap_remote_actor] starting handshake with CON message" << endl;
-    coap_show_pdu(pdu);
     auto tid = coap_send_confirmed(ctx, interface, &dst, pdu);
     // TODO: handle retransmit
     // receive ACK (may include their ids)
@@ -210,6 +209,15 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, uint16_t port) {
                 on(atom("HANDSHAKE"), arg_match) >> [&](node_id_ptr node_id) {
                     cout << "[coap_remote_actor] received node '"
                          << to_string(node_id) << "'" << endl;
+                    node = node_id;
+                    rcvd_ids = true;
+                },
+                on(atom("HANDSHAKE"), arg_match) >> [&](actor_id aid,
+                                                        node_id_ptr node_id) {
+                    cout << "[coap_remote_actor] received '"
+                         << aid << ", "
+                         << to_string(node_id) << endl;
+                    remote_aid = aid;
                     node = node_id;
                     rcvd_ids = true;
                 },
