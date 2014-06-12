@@ -127,11 +127,11 @@ void request_handler(struct coap_context_t  *ctx,
     // Check if block option is set.
     block_opt = get_block(received, &opt_iter);
     if (!block_opt) { // no block option set
-        cout << "[request_handler] message without block opt" << endl;
+        CPPA_LOGF_DEBUG("[request_handler] message without block opt");
         size_t len;
         unsigned char *databuf;
         if (coap_get_data(received, &len, &databuf)) {
-            cout << "[request_handler] incoming data" << endl;
+            CPPA_LOGF_DEBUG("[request_handler] incoming data");
             message_header hdr;
             any_tuple msg;
             binary_deserializer bd(databuf, len,
@@ -145,19 +145,14 @@ void request_handler(struct coap_context_t  *ctx,
                 CPPA_LOGF_ERROR("exception during read_message: "
                                 << detail::demangle(typeid(e))
                                 << ", what(): " << e.what());
-                cout << "[request_handler] exception during read_message: "
-                     << detail::demangle(typeid(e))
-                     << ", what(): " << e.what() << endl;
                 return;
             }
             CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
                                              << " " << to_string(msg));
-            cout << "[request_handler] deserialized: "
-                 << to_string(hdr) << ", " << to_string(msg) << endl;
             match(msg) (
                 on(atom("HANDSHAKE"), arg_match) >> [&](node_id_ptr node) {
-                    cout << "[request_handler] recieved handshake message '"
-                         <<  to_string(node) << "'" << endl;
+                    CPPA_LOGF_DEBUG("[request_handler] recieved handshake message '"
+                         <<  to_string(node) << "'");
                     ptr->set_node(node);
                     if (!ptr->m_parent->register_peer(ptr->node(), ptr)) {
                         CPPA_LOGF_ERROR("multiple incoming connections "
@@ -182,7 +177,7 @@ void request_handler(struct coap_context_t  *ctx,
                                            snd_buf.data(), snd_buf.size(),
                                            nullptr,
                                            COAP_MESSAGE_CON, received->hdr->code);
-                    cout << "[request_handler] sent answer" << endl;
+                    CPPA_LOGF_DEBUG("[request_handler] sent answer");
                 },
                 on(atom("MONITOR"), arg_match) >> [&](const node_id_ptr&,
                                                       actor_id) {
@@ -203,11 +198,8 @@ void request_handler(struct coap_context_t  *ctx,
                     CPPA_LOGF_DEBUG("[request_handler] received TYPE msg");
                 },
                 others() >> [&] {
-                    cout << "[request_handler] delivering message" << endl;
+                    CPPA_LOGF_DEBUG("[request_handler] delivering message");
                     hdr.deliver(move(msg));
-//                    ptr->m_parent->run_later([hdr, msg]{
-//                        hdr.deliver(move(msg));
-//                    });
                 }
             );
         }
@@ -285,88 +277,56 @@ void response_handler(struct coap_context_t  *ctx,
             // Got some data, check if block option is set.
             block_opt = get_block(received, &opt_iter);
             if (!block_opt) { // no block option set
-                cout << "[message handler] message without block opt" << endl;
+                CPPA_LOGF_DEBUG("[message handler] message without block opt");
                 if (coap_get_data(received, &len, &databuf)) {
-                    cout << "[message handler] incoming data" << endl;
-//                    switch(ptr->m_state) {
-//                        case transaction_based_peer::read_state::wait_for_process_info: {
-//                            cout << "[message handler] handshake" << endl;
-//                            uint32_t process_id;
-//                            node_id::host_id_type host_id;
-//                            memcpy(&process_id, databuf, sizeof(uint32_t));
-//                            memcpy(host_id.data(), databuf + sizeof(uint32_t),
-//                                   node_id::host_id_size);
-//                            ptr->set_node(new node_id(process_id, host_id));
-//    //                        if (ptr->m_parent->node() == ptr->node()) {
-//    //                            cout << "*** middleman warning: "
-//    //                                         "incoming connection from self"
-//    //                                 << endl;
-//    //                            return;
-//    //                        }
-//    //                        CPPA_LOGF_DEBUG("read process info: " << to_string(node()));
-//                            if (!ptr->m_parent->register_peer(ptr->node(), ptr)) {
-//                                CPPA_LOGF_ERROR("multiple incoming connections "
-//                                                "from the same node");
-//                                return;
-//                            }
-//                            // initialization done
-//                            ptr->m_state = transaction_based_peer::read_state::read_message;
-//                            ptr->m_rd_buf.clear();
-//    //                        ptr->m_rd_buf.final_size(sizeof(uint32_t));
-//                            // send back own information with ACK
-//                            break;
-//                        }
-//                        case transaction_based_peer::read_state::read_message: {
-                            message_header hdr;
-                            any_tuple msg;
-                            binary_deserializer bd(databuf, len,
-                                                   &(ptr->m_parent->get_namespace()),
-                                                   nullptr);
-                            // todo: not sure about the nullptr
-                            try {
-                                ptr->m_meta_hdr->deserialize(&hdr, &bd);
-                                ptr->m_meta_msg->deserialize(&msg, &bd);
-                            }
-                            catch (exception& e) {
-                                CPPA_LOGF_ERROR("exception during read_message: "
-                                                << detail::demangle(typeid(e))
-                                                << ", what(): " << e.what());
-                            }
-                            CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
-                                                             << " " << to_string(msg));
-                            match(msg) (
-                                on(atom("MONITOR"), arg_match) >> [&](const node_id_ptr&,
-                                                                      actor_id) {
-                                    CPPA_LOGF_DEBUG("[message_handler] received MONITOR msg");
-                                },
-                                on(atom("KILL_PROXY"), arg_match) >> [&](const node_id_ptr&,
-                                                                         actor_id, uint32_t) {
-                                    CPPA_LOGF_DEBUG("[message_handler] received KILL msg");
-                                },
-                                on(atom("LINK"), arg_match) >> [&](const actor_addr&) {
-                                    CPPA_LOGF_DEBUG("[message_handler] received LINK msg");
-                                },
-                                on(atom("UNLINK"), arg_match) >> [&](const actor_addr&) {
-                                    CPPA_LOGF_DEBUG("[message_handler] received UNLINK msg");
-                                },
-                                on(atom("ADD_TYPE"), arg_match) >> [&](uint32_t,
-                                                                       const string&) {
-                                    CPPA_LOGF_DEBUG("[message_handler] received TYPE msg");
-                                },
-                                others() >> [&] {
-                                    hdr.deliver(move(msg));
-                                }
-                            );
-//                            break;
-//                        }
-//                    }
+                    CPPA_LOGF_DEBUG("[message handler] incoming data");
+                    message_header hdr;
+                    any_tuple msg;
+                    binary_deserializer bd(databuf, len,
+                                           &(ptr->m_parent->get_namespace()),
+                                           nullptr);
+                    // todo: not sure about the nullptr
+                    try {
+                        ptr->m_meta_hdr->deserialize(&hdr, &bd);
+                        ptr->m_meta_msg->deserialize(&msg, &bd);
+                    }
+                    catch (exception& e) {
+                        CPPA_LOGF_ERROR("exception during read_message: "
+                                        << detail::demangle(typeid(e))
+                                        << ", what(): " << e.what());
+                    }
+                    CPPA_LOGF_DEBUG("deserialized: " << to_string(hdr)
+                                                     << " " << to_string(msg));
+                    match(msg) (
+                        on(atom("MONITOR"), arg_match) >> [&](const node_id_ptr&,
+                                                              actor_id) {
+                            CPPA_LOGF_DEBUG("[message_handler] received MONITOR msg");
+                        },
+                        on(atom("KILL_PROXY"), arg_match) >> [&](const node_id_ptr&,
+                                                                 actor_id, uint32_t) {
+                            CPPA_LOGF_DEBUG("[message_handler] received KILL msg");
+                        },
+                        on(atom("LINK"), arg_match) >> [&](const actor_addr&) {
+                            CPPA_LOGF_DEBUG("[message_handler] received LINK msg");
+                        },
+                        on(atom("UNLINK"), arg_match) >> [&](const actor_addr&) {
+                            CPPA_LOGF_DEBUG("[message_handler] received UNLINK msg");
+                        },
+                        on(atom("ADD_TYPE"), arg_match) >> [&](uint32_t,
+                                                               const string&) {
+                            CPPA_LOGF_DEBUG("[message_handler] received TYPE msg");
+                        },
+                        others() >> [&] {
+                            hdr.deliver(move(msg));
+                        }
+                    );
                 }
             } else {
-                cout << "[message handler] message with block opt" << endl;
+                CPPA_LOGF_DEBUG("[message handler] message with block opt");
                 unsigned short blktype = opt_iter.type;
                 if (coap_get_data(received, &len, &databuf)) {
                     // TODO: handle data
-                    cout << "[message handler] handle incoming data missing" << endl;
+                    CPPA_LOGF_DEBUG("[message handler] handle incoming data missing");
                 }
                 if (COAP_OPT_BLOCK_MORE(block_opt)) { // more bit is set
                     debug("found the M bit, block size is %u, block nr. %u\n",
@@ -441,9 +401,8 @@ void response_handler(struct coap_context_t  *ctx,
                     return;
                 }
                 else {
-                    cout << "[message handler] message with block opt"
-                                 " ('more' flag is not set -> unhandled)"
-                              << endl;
+                    CPPA_LOGF_DEBUG("[message handler] message with block opt"
+                                 " ('more' flag is not set -> unhandled)");
                 }
             }
         } else {			/* no 2.05 */
@@ -454,8 +413,7 @@ void response_handler(struct coap_context_t  *ctx,
                                 setw(2) << setfill('0') <<
                                 (received->hdr->code & 0x1F));
                 if (coap_get_data(received, &len, &databuf)) {
-                    cout << "[message handler] error + data -> unhandled"
-                              << endl;
+                    CPPA_LOGF_DEBUG("[message handler] error + data -> unhandled");
                 }
                 fprintf(stderr, "\n");
             }
