@@ -134,7 +134,6 @@ continue_reading_result transaction_based_peer::continue_reading() {
     auto msg_len = coap_network_read(m_interface, &remote, msg, sizeof(msg));
     if (msg_len < 0) {
         CPPA_LOG_ERROR("coap_read: recvfrom\n");
-        CPPA_LOG_DEBUG("[continue_reading] recvfrom return 0 bytes");
         return continue_reading_result::continue_later;
     }
     // handle message, mostly from coap_dispatch
@@ -142,28 +141,25 @@ continue_reading_result transaction_based_peer::continue_reading() {
     // msg_len is > 0, otherwise there would have been an error earlier
     if (static_cast<size_t>(msg_len) < sizeof(coap_hdr_t) ) {
         CPPA_LOG_DEBUG("discarded invalid frame");
-        ("[continue_reading] discarded invalid frame");
         return continue_reading_result::continue_later;
     }
     if (static_cast<size_t>(msg_len) < sizeof(coap_hdr_t) ) {
         CPPA_LOG_DEBUG("discarded invalid frame");
-        CPPA_LOG_DEBUG("[continue_reading] discarded invalid frame");
         return continue_reading_result::continue_later;
     }
     // check version identifier
     if (((*msg >> 6) & 0x03) != COAP_DEFAULT_VERSION) {
         CPPA_LOG_DEBUG("unknown protocol version " << ((*msg >> 6) & 0x03));
-        CPPA_LOG_DEBUG("[continue_reading] unknown protocol version ");
         return continue_reading_result::continue_later;
     }
     node = coap_new_node();
     if (!node) {
-        CPPA_LOG_DEBUG("[continue_reading] could not create node");
+        CPPA_LOG_DEBUG("could not create node");
         return continue_reading_result::continue_later;
     }
     node->pdu = coap_pdu_init(0, 0, 0, msg_len);
     if (!node->pdu) {
-        CPPA_LOG_DEBUG("[continue_reading] could not initialize pdu");
+        CPPA_LOG_DEBUG("could not initialize pdu");
         coap_delete_node(node);
         return continue_reading_result::continue_later;
     }
@@ -171,23 +167,20 @@ continue_reading_result transaction_based_peer::continue_reading() {
     node->local_if = (coap_endpoint_t *) m_interface;
     memcpy(&node->remote, &remote, sizeof(coap_address_t));
     if (!coap_pdu_parse(msg, msg_len, node->pdu)) {
-        warn("discard malformed PDU\n");
-        CPPA_LOG_DEBUG("[continue_reading] discard malformed PDU");
+        CPPA_LOG_DEBUG("discard malformed PDU");
         coap_delete_node(node);
         return continue_reading_result::continue_later;
     }
     // and add new node to receive queue
     coap_transaction_id(&node->remote, node->pdu, &node->id);
-#ifndef INET6_ADDRSTRLEN
-#define INET6_ADDRSTRLEN 40
-#endif
-    unsigned char addr[INET6_ADDRSTRLEN+8];
-    if (coap_print_addr(&remote, addr, INET6_ADDRSTRLEN+8)) {
-        CPPA_LOG_DEBUG("[continue_reading] received "<<
-                       (int)msg_len << " bytes from " << addr);
-        CPPA_LOG_DEBUG("[continue_reading] received " << (int)msg_len
-             << " bytes from " << addr);
-    }
+//#ifndef INET6_ADDRSTRLEN
+//#define INET6_ADDRSTRLEN 40
+//#endif
+//    unsigned char addr[INET6_ADDRSTRLEN+8];
+//    if (coap_print_addr(&remote, addr, INET6_ADDRSTRLEN+8) != 0) {
+//        CPPA_LOG_DEBUG("received "<<
+//                       (int)msg_len << " bytes from " << addr);
+//    }
     // replaced call to coap_dispatch with the following
     coap_queue_t *sent = NULL;
     coap_pdu_t *response;
@@ -200,18 +193,17 @@ continue_reading_result transaction_based_peer::continue_reading() {
     memset(opt_filter, 0, sizeof(coap_opt_filter_t));
     if (node->pdu->hdr->version != COAP_DEFAULT_VERSION) {
         debug("dropped packet with unknown version %u\n", node->pdu->hdr->version);
-        CPPA_LOG_DEBUG("[continue_reading] dropped packet with unknown version "
+        CPPA_LOG_DEBUG("dropped packet with unknown version "
              << node->pdu->hdr->version);
         return cleanup();
     }
-    CPPA_LOG_DEBUG("[continue_reading] message type is:");
+    CPPA_LOG_DEBUG("message type is:");
     switch (node->pdu->hdr->type) {
         case COAP_MESSAGE_ACK: {
-            CPPA_LOG_DEBUG("[continue_reading] ACK");
+            CPPA_LOG_DEBUG("ACK");
             auto req = m_requests.find(node->pdu->hdr->id);
             if (req != m_requests.end()) {
-                CPPA_LOG_DEBUG("[continue_reading] Received ACK to "
-                               "request, deleting info")
+                CPPA_LOG_DEBUG("deleting request info")
                 m_requests.erase(req);
             }
             /* find transaction in sendqueue to stop retransmission */
@@ -227,31 +219,29 @@ continue_reading_result transaction_based_peer::continue_reading() {
         }
 
         case COAP_MESSAGE_RST: {
-            CPPA_LOG_DEBUG("[continue_reading] RST");
+            CPPA_LOG_DEBUG("RST");
             coap_log(LOG_ALERT, "got RST for message %u\n", ntohs(node->pdu->hdr->id));
             coap_remove_from_queue(&m_ctx->sendqueue, node->id, &sent);
             if (sent) {
-                CPPA_LOG_DEBUG("[continue_reading] COAP_MESSAGE_RST with "
+                CPPA_LOG_DEBUG("COAP_MESSAGE_RST with "
                                "sent not implemented");
             }
             return cleanup();
         }
 
         case COAP_MESSAGE_NON: { /* check for unknown critical options */
-            CPPA_LOG_DEBUG("[continue_reading] NON");
+            CPPA_LOG_DEBUG("NON");
             if (coap_option_check_critical(m_ctx, node->pdu, opt_filter) == 0) {
-                CPPA_LOG_DEBUG("[continue_reading] NON msg + check_critical == 0");
+                CPPA_LOG_DEBUG("NON msg + check_critical == 0");
                 return cleanup();
             }
             break;
         }
 
         case COAP_MESSAGE_CON: { /* check for unknown critical options */
-            CPPA_LOG_DEBUG("[continue_reading] CON");
-            CPPA_LOG_DEBUG("[continue_reading] received COAP_MESSAGE_CON");
-            CPPA_LOG_DEBUG("[continue_reading] passing to message handler");
+            CPPA_LOG_DEBUG("CON");
             if (coap_option_check_critical(m_ctx, node->pdu, opt_filter) == 0) {
-                CPPA_LOG_DEBUG("[continue_reading] CON msg + check_critical == 0");
+                CPPA_LOG_DEBUG("check_critical == 0");
                 /* FIXME: send response only if we have received a request. Otherwise,
                  * send RST. */
                 response = coap_new_error_response(node->pdu,
@@ -272,11 +262,11 @@ continue_reading_result transaction_based_peer::continue_reading() {
             break;
         }
     }
-    CPPA_LOG_DEBUG("[continue_reading] passing message to handler");
+    CPPA_LOG_DEBUG("passing message to handler");
     /* Pass message to upper layer if a specific handler was
      * registered for a request that should be handled locally. */
     if (COAP_MESSAGE_IS_REQUEST(node->pdu->hdr)) {
-        CPPA_LOG_DEBUG("[continue_reading] received request");
+        CPPA_LOG_DEBUG("received request");
         request_handler(m_ctx,
                         node->local_if,
                        &node->remote,
@@ -285,7 +275,7 @@ continue_reading_result transaction_based_peer::continue_reading() {
                         node->id);
     }
     else if (COAP_MESSAGE_IS_RESPONSE(node->pdu->hdr)) {
-        CPPA_LOG_DEBUG("[continue_reading] received response");
+        CPPA_LOG_DEBUG("received response");
         response_handler(m_ctx,
                          node->local_if,
                         &node->remote,
@@ -294,8 +284,7 @@ continue_reading_result transaction_based_peer::continue_reading() {
                          node->id);
     }
     else {
-        CPPA_LOG_DEBUG("[continue_reading] received massage with invalid code");
-        debug("dropped message with invalid code\n");
+        CPPA_LOG_DEBUG("received massage with invalid code");
         coap_send_message_type(m_ctx, node->local_if,
                                &node->remote,
                                node->pdu,
@@ -357,8 +346,6 @@ void transaction_based_peer::enqueue(msg_hdr_cref hdr, const any_tuple& msg) {
         return;
     }
     CPPA_LOG_DEBUG("serialized: " << to_string(hdr) << " " << to_string(msg));
-    CPPA_LOG_DEBUG("[enqueue] serialized: " << to_string(hdr)
-         << " "                      << to_string(msg));
     // todo send message
     if (hdr.receiver) {
         auto ptr = dynamic_cast<abstract_actor*>(&(*hdr.receiver));
@@ -366,20 +353,20 @@ void transaction_based_peer::enqueue(msg_hdr_cref hdr, const any_tuple& msg) {
             auto node = ptr->node();
             auto addr = m_known_nodes.find(node);
             if (addr != m_known_nodes.end()) {
-                CPPA_LOG_DEBUG("[enqueue] sending");
+                CPPA_LOG_DEBUG("sending");
                 // todo no magic numbers
                 send_coap_message(&addr->second, wbuf.data(), wbuf.size(),
                                   m_options, COAP_MESSAGE_NON,m_default_method);
             }
             else {
-                CPPA_LOG_DEBUG("[enqueue] unknown destination");
+                CPPA_LOG_DEBUG("unknown destination");
             }
         }
     }
     else {
-        CPPA_LOG_DEBUG("[enqueue] empty receiver");
+        CPPA_LOG_DEBUG("empty receiver");
     }
-    CPPA_LOG_DEBUG("[enqueue] end");
+    CPPA_LOG_DEBUG("end");
 }
 
 void transaction_based_peer::dispose() {
