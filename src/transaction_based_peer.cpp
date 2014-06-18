@@ -203,7 +203,7 @@ continue_reading_result transaction_based_peer::continue_reading() {
             CPPA_LOG_DEBUG("ACK");
             auto req = m_requests.find(node->pdu->hdr->id);
             if (req != m_requests.end()) {
-                CPPA_LOG_DEBUG("deleting request info")
+                CPPA_LOG_DEBUG("deleting request info");
                 m_requests.erase(req);
             }
             /* find transaction in sendqueue to stop retransmission */
@@ -380,7 +380,7 @@ void transaction_based_peer::send_coap_message(const coap_address_t* dst,
                                                void* payload, size_t size,
                                                coap_list_t* options,
                                                int type, unsigned char method) {
-    auto req = new_request(m_ctx, method, options, payload, size);
+    auto req = new_request(m_ctx, method, options, payload, type, size);
 
     coap_tid_t tid;
     if (type == COAP_MESSAGE_CON) {

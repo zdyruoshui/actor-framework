@@ -160,7 +160,7 @@ abstract_actor_ptr coap_remote_actor_impl(const char* host, uint16_t port) {
         coap_pdu_t* rcvd_msg = coap_pdu_init(0, 0, 0, bytes_read);
         if (!coap_pdu_parse(rcv_buf, bytes_read, rcvd_msg)) {
             CPPA_LOGF_DEBUG("[coap_remote_actor] malformed pdu");
-            CPPA_LOG_DEBUG("[coap_remote_actor] malformed pdu");
+            CPPA_LOGF_DEBUG("[coap_remote_actor] malformed pdu");
             continue;
         }
         coap_tid_t rcvd_tid;

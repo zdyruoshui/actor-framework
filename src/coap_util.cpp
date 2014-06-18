@@ -468,7 +468,8 @@ coap_list_t* new_option_node(unsigned short key, unsigned int length, unsigned c
 transaction_based_peer::coap_request new_request(coap_context_t *ctx,
                                                  unsigned char method,
                                                  coap_list_t *options,
-                                                 void *payload, size_t size) {
+                                                 void *payload,
+                                                 int type, size_t size) {
     auto ptr = reinterpret_cast<transaction_based_peer*>(ctx->app);
     transaction_based_peer::coap_request req;
     coap_pdu_t*  pdu{nullptr};
@@ -497,7 +498,7 @@ transaction_based_peer::coap_request new_request(coap_context_t *ctx,
     if (!(pdu = coap_new_pdu())) {
         throw runtime_error("failed to create coap pdu");
     }
-    pdu->hdr->type = ptr->m_default_msgtype;
+    pdu->hdr->type = type;
     pdu->hdr->id   = coap_new_message_id(ptr->m_ctx);
     pdu->hdr->code = method;
     pdu->hdr->token_length = req.the_token.length;

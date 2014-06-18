@@ -79,7 +79,8 @@ class transaction_based_peer : public peer {
     friend coap_request new_request(coap_context_t *ctx,
                                     unsigned char method,
                                     coap_list_t *options,
-                                    void *payload, size_t size);
+                                    void *payload,
+                                    int type, size_t size);
 
     friend abstract_actor_ptr detail::coap_remote_actor_impl(const char* host,
                                                              uint16_t port);

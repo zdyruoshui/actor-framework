@@ -90,7 +90,7 @@ coap_list_t* new_option_node(unsigned short key,
 transaction_based_peer::coap_request new_request(coap_context_t *ctx,
                                                  unsigned char method,
                                                  coap_list_t *options,
-                                                 void* payload, size_t size);
+                                                 void* payload, int type, size_t size);
 
 int resolve_address(const char* server, struct sockaddr *dst);
 
