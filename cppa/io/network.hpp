@@ -30,6 +30,7 @@
 #include "cppa/ref_counted.hpp"
 #include "cppa/accept_handle.hpp"
 #include "cppa/connection_handle.hpp"
+#include "cppa/io/datagram_source_handle.hpp"
 
 #include "cppa/mixin/memory_cached.hpp"
 
@@ -124,7 +125,7 @@ namespace network {
 #endif
 
 struct datagram_endpoint_data {
-    sockaddr addr;
+    sockaddr_storage addr;
     socklen_t addrlen;
 };
 
@@ -449,6 +450,11 @@ class default_socket {
  */
 using default_socket_acceptor = default_socket;
 
+/**
+ * @brief Socket type used for datagrams.
+ */
+using datagram_socket = default_socket;
+
 template<typename T>
 inline connection_handle conn_hdl_from_socket(const T& sock) {
     return connection_handle::from_int(
@@ -458,6 +464,12 @@ inline connection_handle conn_hdl_from_socket(const T& sock) {
 template<typename T>
 inline accept_handle accept_hdl_from_socket(const T& sock) {
     return accept_handle::from_int(
+                int64_from_native_socket(sock.native_handle()));
+}
+
+template<typename T>
+inline datagram_source_handle datagram_source_hdl_from_socket(const T& sock) {
+    return datagram_source_handle::from_int(
                 int64_from_native_socket(sock.native_handle()));
 }
 
@@ -506,23 +518,6 @@ class stream_manager : public manager {
      */
     virtual void consume(const void* data, size_t num_bytes) = 0;
 
-};
-
-
-/**
- * @brief A datagram manager configures an IO device and provides callbacks
- *        for incoming data as well as for error handling.
- */
-class datagram_manager : public manager {
-
- public:
- 
-    virtual ~datagram_manager();
-    
-    /**
-     * @brief Called by the underlying IO device whenever it received data.
-     */
-    virtual void consume(const void* data, size_t num_bytes) = 0;
 };
 
 /**
@@ -769,6 +764,147 @@ class stream : public event_handler {
 };
 
 /**
+ * @brief A datagram manager configures an IO device and provides callbacks
+ *        for incoming data as well as for error handling.
+ */
+class datagram_manager : public manager {
+
+ public:
+ 
+    virtual ~datagram_manager();
+    
+    /**
+     * @brief Called by the underlying IO device whenever it received data.
+     */
+    virtual void consume(const void* data, size_t num_bytes,
+                         datagram_endpoint_data epd) = 0;
+};
+
+/**
+ * @brief A datagram handler is resonsible to handle incoming datagram
+ *        and forward them to the responsible datagram manager.
+ */
+template<class DatagramSocket>
+class datagram_handler : public event_handler {
+
+
+ public:
+
+    /**
+     * @brief A smart pointer to a stream manager.
+     */
+    using manager_ptr = intrusive_ptr<datagram_manager>;
+
+    /**
+     * @brief A buffer class providing a compatible
+     *        interface to @p std::vector.
+     */
+    using buffer_type = std::vector<char>;
+
+    datagram_handler(multiplexer& backend) : m_sock(backend) {
+        // fixme: magicnumber + better size limit
+        // currently: maximum size for UDP packets
+        m_rd_buf.resize(65536);
+
+    }
+
+    /**
+     * @brief Returns the @p multiplexer this stream belongs to.
+     */
+    inline multiplexer& backend() {
+        return m_sock.backend();
+    }
+
+    /**
+     * @brief Returns the IO socket.
+     */
+    inline DatagramSocket& socket_handle() {
+        return m_sock;
+    }
+
+    /**
+     * @brief Initializes this datagram handler,
+     *        setting the socket handle to @p fd.
+     */
+    void init(DatagramSocket fd) {
+        m_sock = std::move(fd);
+    }
+
+    /**
+     * @brief Starts reading data from the socket, forwarding incoming
+     *        data to @p mgr.
+     */
+    void start(const manager_ptr& mgr) {
+        CPPA_REQUIRE(mgr != nullptr);
+        m_reader = mgr;
+        backend().add(operation::read, m_sock.fd(), this);
+    }
+
+    void removed_from_loop(operation op) override {
+        switch (op) {
+            case operation::read:
+                m_reader.reset();
+                break;
+            default:
+                // writing is not our responsibility
+                break;
+        }
+    }
+
+    buffer_type& rd_buf() {
+        return m_rd_buf;
+    }
+
+    void stop_reading() {
+        CPPA_LOGM_TRACE("boost::actor_io::network::stream", "");
+        m_sock.close_read();
+        backend().del(operation::read, m_sock.fd(), this);
+    }
+
+    void handle_event(operation op) {
+        CPPA_LOG_TRACE("op = " << static_cast<int>(op));
+        switch (op) {
+            case operation::read: {
+                size_t rb; // read bytes
+                datagram_endpoint_data epd; // sender information
+                if (!read_datagram(rb, m_sock.fd(), m_rd_buf.data(),
+                                   m_rd_buf.size(), epd)) {
+                    m_reader->io_failure(operation::read);
+                    backend().del(operation::read, m_sock.fd(), this);
+                } else if (rb > 0) {
+                    m_reader->consume(m_rd_buf.data(), rb, epd);
+                }
+                break;
+            }
+            case operation::write: {
+                // not our responsibility
+                break;
+            }
+            case operation::propagate_error:
+                if (m_reader) {
+                    m_reader->io_failure(operation::read);
+                }
+                // backend will delete this handler anyway,
+                // no need to call backend().del() here
+                break;
+        }
+    }
+
+ protected:
+
+    native_socket fd() const override {
+        return m_sock.fd();
+    }
+
+ private:
+
+    DatagramSocket      m_sock;
+    manager_ptr         m_reader;
+    buffer_type         m_rd_buf;
+
+};
+
+/**
  * @brief An acceptor manager configures an acceptor and provides
  *        callbacks for incoming connections as well as for error handling.
  */
@@ -898,24 +1034,6 @@ class acceptor : public event_handler {
 
 };
 
-/**
- * @brief An acceptor manager configures an acceptor and provides
- *        callbacks for incoming connections as well as for error handling.
- */
-class datagram_source_manager : public manager {
-
- public:
-
-    ~datagram_source_manager();
-
-    /**
-     * @brief Called by the underlying IO device to indicate that
-     *        a new connection is awaiting acceptance.
-     */
-    virtual void new_source() = 0;
-
-};
-
 native_socket new_ipv4_connection_impl(const std::string&, uint16_t);
 
 default_socket new_ipv4_connection(const std::string& host, uint16_t port);
@@ -929,6 +1047,8 @@ native_socket new_ipv4_acceptor_impl(uint16_t port, const char* addr);
 
 default_socket_acceptor new_ipv4_acceptor(uint16_t port,
                                           const char* addr = nullptr);
+
+datagram_socket new_dgram_socket();
 
 template<class SocketAcceptor>
 void ipv4_bind(SocketAcceptor& sock,

@@ -683,6 +683,21 @@ bool try_accept(native_socket& result, native_socket fd) {
     return true;
 }
 
+bool read_datagram(size_t& result, native_socket fd,
+                   void* buf, size_t len,
+                   datagram_endpoint_data& epd) {
+    CPPA_LOGF_TRACE(CPPA_ARG(fd) << "," << CPPA_ARG(len));
+    epd.addrlen = sizeof(epd.addr);
+    auto sres = ::recvfrom(fd, buf, len, 0,
+                           reinterpret_cast<sockaddr*>(&epd.addr),
+                           &epd.addrlen);
+    if (is_error(sres, true) || sres == 0) {
+        return false;
+    }
+    result = (sres > 0) ? static_cast<size_t>(sres) : 0;
+    return true;
+}
+
 event_handler::event_handler() : m_eventbf(0) {
     // nop
 }
@@ -738,6 +753,10 @@ manager::~manager() {
 }
 
 stream_manager::~stream_manager() {
+    // nop
+}
+
+datagram_manager::~datagram_manager() {
     // nop
 }
 
@@ -853,6 +872,12 @@ default_socket_acceptor new_ipv4_acceptor(uint16_t port, const char* addr) {
                     << ", addr = " << (addr ? addr : "nullptr"));
     auto& backend = get_multiplexer_singleton();
     return default_socket_acceptor{backend, new_ipv4_acceptor_impl(port, addr)};
+}
+
+datagram_socket new_dgram_socket() {
+    auto& backend = get_multiplexer_singleton();
+    auto sockfd=socket(AF_UNSPEC,SOCK_DGRAM,0);
+    return datagram_socket{backend, sockfd};
 }
 
 } // namespace network

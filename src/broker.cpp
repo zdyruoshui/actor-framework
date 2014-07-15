@@ -143,6 +143,46 @@ void broker::doorman::io_failure(network::operation op) {
     disconnect();
 }
 
+broker::datagram_scribe::datagram_scribe(broker *parent, datagram_endpoint ep)
+    : super (parent), m_ep(ep) {
+    // todo: implement
+}
+
+void broker::datagram_scribe::remove_from_broker() {
+    CPPA_LOG_TRACE("ep = " << ep());
+    m_broker->m_datagram_scribes.erase(ep());
+}
+
+broker::datagram_scribe::~datagram_scribe() {
+    CPPA_LOG_TRACE("");
+}
+
+message broker::datagram_scribe::disconnect_message() {
+//    return make_message(connection_closed_msg{ep()});
+}
+
+void broker::datagram_scribe::consume(const void*, size_t num_bytes
+                                      , network::datagram_endpoint_data epd) {
+//    CPPA_LOG_TRACE(CPPA_ARG(num_bytes));
+//    auto& buf = rd_buf();
+//    buf.resize(num_bytes);                       // make sure size is correct
+//    read_msg().buf.swap(buf);                    // swap into message to client
+//    m_broker->invoke_message(invalid_actor_addr, // call client
+//                             message_id::invalid,
+//                             m_read_msg);
+//    read_msg().buf.swap(buf);                    // swap buffer back to stream
+//    flush();                                     // implicit flush of wr_buf()
+}
+
+void broker::datagram_scribe::io_failure(network::operation op) {
+    CPPA_LOG_TRACE("ep = " << ep()
+                   << ", " << CPPA_TARG(op, static_cast<int>));
+    // keep compiler happy when compiling w/o logging
+    static_cast<void>(op);
+    disconnect();
+}
+
+
 class broker::continuation {
 
  public:
@@ -284,7 +324,8 @@ bool broker::initialized() const {
 
 broker::broker()
         : m_initialized(false), m_hidden(true)
-        , m_running(false), m_mm(*middleman::instance()) {
+        , m_running(false), m_mm(*middleman::instance())
+        , m_dgram_sock(network::new_dgram_socket()) {
     // nop
 }
 
@@ -378,6 +419,14 @@ behavior broker::functor_based::make_behavior() {
 
 network::multiplexer& broker::backend() {
     return m_mm.backend();
+}
+
+broker::datagram_handle broker::new_datagram(datagram_endpoint ep) {
+    // todo: implement me
+}
+
+void broker::send_datagram(datagram_handle ep) {
+    // todo: implement me
 }
 
 } // namespace io

@@ -228,49 +228,12 @@ class broker : public extend<local_actor>::
 
         message disconnect_message() override;
 
-        void consume(const void* data, size_t num_bytes) override;
+        void consume(const void* data, size_t num_bytes,
+                     network::datagram_endpoint_data epd) override;
 
         datagram_endpoint m_ep;
 
         message m_read_msg;
-    };
-    
-     class datagram_doorman : public network::datagram_source_manager
-                            , public servant {
-
-        using super = servant;
-
-     public:
-
-        ~datagram_doorman();
-
-        datagram_doorman(broker* parent, datagram_source_handle hdl);
-
-        inline datagram_source_handle hdl() const { return m_hdl; }
-
-        void io_failure(network::operation op) override;
-
-        // needs to be launched explicitly
-        virtual void launch() = 0;
-
-     protected:
-
-        void remove_from_broker() override;
-
-        message disconnect_message() override;
-
-        inline new_connection_msg& accept_msg() {
-            return m_accept_msg.get_as_mutable<new_connection_msg>(0);
-        }
-
-        inline const new_connection_msg& accept_msg() const {
-            return m_accept_msg.get_as<new_connection_msg>(0);
-        }
-
-        datagram_source_handle m_hdl;
-
-        message m_accept_msg;
-
     };
 
     class continuation;
@@ -278,6 +241,7 @@ class broker : public extend<local_actor>::
     // ... and some helpers need friendship
     friend class scribe;
     friend class doorman;
+    friend class datagram_scribe;
     friend class continuation;
 
     ~broker();
@@ -460,6 +424,8 @@ class broker : public extend<local_actor>::
     template<class DatagramSocket>
     datagram_source_handle add_datagram_source(DatagramSocket sock) {
         // ToDo: implement me
+        CPPA_LOG_TRACE("sock.fd = " << sock.fd());
+        CPPA_REQUIRE(sock.fd() != network::invalid_socket);
         return invalid_datagram_source_handle;
     }
 
@@ -528,8 +494,6 @@ class broker : public extend<local_actor>::
     using doorman_pointer = intrusive_ptr<doorman>;
     
     using datagram_scribe_pointer = intrusive_ptr<datagram_scribe>;
-    
-    using datagram_doorman_pointer = intrusive_ptr<datagram_doorman>;
 
     bool initialized() const;
 
@@ -560,6 +524,11 @@ class broker : public extend<local_actor>::
     }
 
     // throws on error
+    inline datagram_scribe& by_id(datagram_endpoint ep) {
+        return by_id(ep, m_datagram_scribes);
+    }
+
+    // throws on error
     inline doorman& by_id(accept_handle hdl) { return by_id(hdl, m_doormen); }
 
     void invoke_message(const actor_addr& sender, message_id mid,
@@ -573,9 +542,8 @@ class broker : public extend<local_actor>::
     
     std::map<accept_handle, doorman_pointer> m_doormen;
     std::map<connection_handle, scribe_pointer> m_scribes;
-                   
-    std::map<datagram_source_handle, datagram_doorman_pointer> m_udp_doormen;
-    std::map<datagram_endpoint, datagram_scribe_pointer> m_udp_scribes;
+
+    std::map<datagram_endpoint, datagram_scribe_pointer> m_datagram_scribes;
                    
     policy::not_prioritizing m_priority_policy;
     policy::sequential_invoke m_invoke_policy;
@@ -587,6 +555,9 @@ class broker : public extend<local_actor>::
     bool m_running;
 
     middleman& m_mm;
+    
+    // todo save the last datagram handles?
+    network::datagram_socket m_dgram_sock;
 
 };
 
