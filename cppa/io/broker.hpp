@@ -60,6 +60,11 @@ class broker : public extend<local_actor>::
  public:
 
     using buffer_type = std::vector<char>;
+    
+    struct datagram_handle {
+        buffer_type* buf;
+        datagram_endpoint dest;
+    };
 
     class servant {
 
@@ -177,6 +182,96 @@ class broker : public extend<local_actor>::
         message m_accept_msg;
 
     };
+    
+    class datagram_scribe : public network::datagram_manager, public servant {
+        
+        using super = servant;
+        
+     public:
+     
+        ~datagram_scribe();
+
+        datagram_scribe(broker* parent, datagram_endpoint ep);
+
+        /**
+         * @brief Implicitly starts the read loop on first call.
+         */
+        virtual void configure_read(receive_policy::config config) = 0;
+
+        /**
+         * @brief Grants access to the output buffer.
+         */
+        virtual datagram_handle& new_datagram() = 0;
+
+        /**
+         * @brief Sends the next datagram in line.
+         */
+        virtual void send_datagram() = 0;
+
+        inline datagram_endpoint ep() const { return m_ep; }
+
+        void io_failure(network::operation op) override;
+
+     protected:
+
+        virtual buffer_type& rd_buf() = 0;
+
+        inline new_data_msg& read_msg() {
+            return m_read_msg.get_as_mutable<new_data_msg>(0);
+        }
+
+        inline const new_data_msg& read_msg() const {
+            return m_read_msg.get_as<new_data_msg>(0);
+        }
+
+        void remove_from_broker() override;
+
+        message disconnect_message() override;
+
+        void consume(const void* data, size_t num_bytes) override;
+
+        datagram_endpoint m_ep;
+
+        message m_read_msg;
+    };
+    
+     class datagram_doorman : public network::datagram_source_manager
+                            , public servant {
+
+        using super = servant;
+
+     public:
+
+        ~datagram_doorman();
+
+        datagram_doorman(broker* parent, datagram_source_handle hdl);
+
+        inline datagram_source_handle hdl() const { return m_hdl; }
+
+        void io_failure(network::operation op) override;
+
+        // needs to be launched explicitly
+        virtual void launch() = 0;
+
+     protected:
+
+        void remove_from_broker() override;
+
+        message disconnect_message() override;
+
+        inline new_connection_msg& accept_msg() {
+            return m_accept_msg.get_as_mutable<new_connection_msg>(0);
+        }
+
+        inline const new_connection_msg& accept_msg() const {
+            return m_accept_msg.get_as<new_connection_msg>(0);
+        }
+
+        datagram_source_handle m_hdl;
+
+        message m_accept_msg;
+
+    };
 
     class continuation;
 
@@ -208,11 +303,6 @@ class broker : public extend<local_actor>::
      * @brief Sends the content of the buffer for given connection.
      */
     void flush(connection_handle hdl);
-
-    struct datagram_handle {
-        buffer_type* buf;
-        datagram_endpoint dest;
-    };
 
     /**
      * @brief Returns a new buffer for the given endpoint. Note that each call
@@ -436,6 +526,10 @@ class broker : public extend<local_actor>::
     using scribe_pointer = intrusive_ptr<scribe>;
 
     using doorman_pointer = intrusive_ptr<doorman>;
+    
+    using datagram_scribe_pointer = intrusive_ptr<datagram_scribe>;
+    
+    using datagram_doorman_pointer = intrusive_ptr<datagram_doorman>;
 
     bool initialized() const;
 
@@ -476,10 +570,13 @@ class broker : public extend<local_actor>::
     void erase_io(int id);
 
     void erase_acceptor(int id);
-
+    
     std::map<accept_handle, doorman_pointer> m_doormen;
     std::map<connection_handle, scribe_pointer> m_scribes;
-
+                   
+    std::map<datagram_source_handle, datagram_doorman_pointer> m_udp_doormen;
+    std::map<datagram_endpoint, datagram_scribe_pointer> m_udp_scribes;
+                   
     policy::not_prioritizing m_priority_policy;
     policy::sequential_invoke m_invoke_policy;
 

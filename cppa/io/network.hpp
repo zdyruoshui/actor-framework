@@ -508,6 +508,23 @@ class stream_manager : public manager {
 
 };
 
+
+/**
+ * @brief A datagram manager configures an IO device and provides callbacks
+ *        for incoming data as well as for error handling.
+ */
+class datagram_manager : public manager {
+
+ public:
+ 
+    virtual ~datagram_manager();
+    
+    /**
+     * @brief Called by the underlying IO device whenever it received data.
+     */
+    virtual void consume(const void* data, size_t num_bytes) = 0;
+};
+
 /**
  * @brief A stream capable of both reading and writing. The stream's input
  *        data is forwarded to its {@link stream_manager manager}.
@@ -878,6 +895,24 @@ class acceptor : public event_handler {
     manager_ptr    m_mgr;
     SocketAcceptor m_accept_sock;
     socket_type    m_sock;
+
+};
+
+/**
+ * @brief An acceptor manager configures an acceptor and provides
+ *        callbacks for incoming connections as well as for error handling.
+ */
+class datagram_source_manager : public manager {
+
+ public:
+
+    ~datagram_source_manager();
+
+    /**
+     * @brief Called by the underlying IO device to indicate that
+     *        a new connection is awaiting acceptance.
+     */
+    virtual void new_source() = 0;
 
 };
 
