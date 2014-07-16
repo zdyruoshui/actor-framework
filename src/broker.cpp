@@ -158,19 +158,21 @@ broker::datagram_scribe::~datagram_scribe() {
 }
 
 message broker::datagram_scribe::disconnect_message() {
+    // todo: scribe has no handle, only an endpoint ...
 //    return make_message(connection_closed_msg{ep()});
 }
 
-void broker::datagram_scribe::consume(const void*, size_t num_bytes
-                                      , network::datagram_endpoint_data epd) {
-//    CPPA_LOG_TRACE(CPPA_ARG(num_bytes));
-//    auto& buf = rd_buf();
-//    buf.resize(num_bytes);                       // make sure size is correct
-//    read_msg().buf.swap(buf);                    // swap into message to client
-//    m_broker->invoke_message(invalid_actor_addr, // call client
-//                             message_id::invalid,
-//                             m_read_msg);
-//    read_msg().buf.swap(buf);                    // swap buffer back to stream
+void broker::datagram_scribe::consume(const void*, size_t num_bytes,
+                                      datagram_endpoint ep) {
+    CPPA_LOG_TRACE(CPPA_ARG(num_bytes));
+    // todo: implement
+    auto& buf = rd_buf();
+    buf.resize(num_bytes);                       // make sure size is correct
+    read_msg().buf.swap(buf);                    // swap into message to client
+    m_broker->invoke_message(invalid_actor_addr, // call client
+                             message_id::invalid,
+                             m_read_msg);
+    read_msg().buf.swap(buf);                    // swap buffer back to stream
 //    flush();                                     // implicit flush of wr_buf()
 }
 
@@ -422,11 +424,21 @@ network::multiplexer& broker::backend() {
 }
 
 broker::datagram_handle broker::new_datagram(datagram_endpoint ep) {
-    // todo: implement me
+    datagram_handle hdl;
+    hdl.dest = ep;
+    return hdl; // todo: automatically move out?
 }
 
 void broker::send_datagram(datagram_handle ep) {
-    // todo: implement me
+    if (ep.buf->size() > 65536) { // todo: remove magic number
+        // raise some error
+    }
+    auto sres = ::sendto(m_dgram_sock.fd(), ep.buf->data(), ep.buf->size(), 0,
+                         reinterpret_cast<sockaddr*>(&ep.dest->addr),
+                         ep.dest->addrlen);
+    if (sres < 0) { //  ||sres != ep.buf->size()
+        // todo: some error
+    }
 }
 
 } // namespace io

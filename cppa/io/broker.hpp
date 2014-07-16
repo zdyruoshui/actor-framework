@@ -229,7 +229,7 @@ class broker : public extend<local_actor>::
         message disconnect_message() override;
 
         void consume(const void* data, size_t num_bytes,
-                     network::datagram_endpoint_data epd) override;
+                     datagram_endpoint ep) override;
 
         datagram_endpoint m_ep;
 
@@ -277,7 +277,7 @@ class broker : public extend<local_actor>::
     /**
      * @brief Sends the datagram.
      */
-    void send_datagram(datagram_handle ep);
+    void send_datagram(datagram_handle hdl);
 
     inline void send_datagram(datagram_endpoint ep,
                               size_t data_size,
@@ -556,7 +556,7 @@ class broker : public extend<local_actor>::
 
     middleman& m_mm;
     
-    // todo save the last datagram handles?
+    // todo: some kind of (circle) buffer for datagram handles
     network::datagram_socket m_dgram_sock;
 
 };

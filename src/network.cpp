@@ -685,12 +685,12 @@ bool try_accept(native_socket& result, native_socket fd) {
 
 bool read_datagram(size_t& result, native_socket fd,
                    void* buf, size_t len,
-                   datagram_endpoint_data& epd) {
+                   datagram_endpoint epd) {
     CPPA_LOGF_TRACE(CPPA_ARG(fd) << "," << CPPA_ARG(len));
-    epd.addrlen = sizeof(epd.addr);
+    epd->addrlen = sizeof(epd->addr);
     auto sres = ::recvfrom(fd, buf, len, 0,
-                           reinterpret_cast<sockaddr*>(&epd.addr),
-                           &epd.addrlen);
+                           reinterpret_cast<sockaddr*>(&epd->addr),
+                           &epd->addrlen);
     if (is_error(sres, true) || sres == 0) {
         return false;
     }

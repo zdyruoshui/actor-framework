@@ -20,11 +20,19 @@
 #define CPPA_IO_DATAGRAM_ENDPOINT_HPP
 
 #include <memory>
+#include <sys/socket.h>
 
-#include "cppa/io/network.hpp"
+//#include "cppa/io/network.hpp"
 
 namespace cppa {
 namespace io {
+
+namespace network {
+    struct datagram_endpoint_data {
+        sockaddr_storage addr; // todo: free this?
+        socklen_t addrlen;
+    };
+}
 
 using datagram_endpoint = std::shared_ptr<network::datagram_endpoint_data>;
 

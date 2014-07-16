@@ -30,12 +30,13 @@
 #include "cppa/ref_counted.hpp"
 #include "cppa/accept_handle.hpp"
 #include "cppa/connection_handle.hpp"
-#include "cppa/io/datagram_source_handle.hpp"
 
 #include "cppa/mixin/memory_cached.hpp"
 
 #include "cppa/io/fwd.hpp"
 #include "cppa/io/receive_policy.hpp"
+#include "cppa/io/datagram_endpoint.hpp"
+#include "cppa/io/datagram_source_handle.hpp"
 
 #include "cppa/detail/logging.hpp"
 
@@ -123,11 +124,6 @@ namespace network {
     constexpr int ec_out_of_memory = ENOMEM;
     constexpr int ec_interrupted_syscall = EINTR;
 #endif
-
-struct datagram_endpoint_data {
-    sockaddr_storage addr;
-    socklen_t addrlen;
-};
 
 /**
  * @brief Platform-specific native socket type.
@@ -777,7 +773,7 @@ class datagram_manager : public manager {
      * @brief Called by the underlying IO device whenever it received data.
      */
     virtual void consume(const void* data, size_t num_bytes,
-                         datagram_endpoint_data epd) = 0;
+                         datagram_endpoint ep) = 0;
 };
 
 /**
@@ -866,13 +862,14 @@ class datagram_handler : public event_handler {
         switch (op) {
             case operation::read: {
                 size_t rb; // read bytes
-                datagram_endpoint_data epd; // sender information
+                datagram_endpoint ep = std::make_shared<datagram_endpoint_data>(); // todo: verify
+//                datagram_endpoint ep = new datagram_endpoint_data();
                 if (!read_datagram(rb, m_sock.fd(), m_rd_buf.data(),
-                                   m_rd_buf.size(), epd)) {
+                                   m_rd_buf.size(), ep)) {
                     m_reader->io_failure(operation::read);
                     backend().del(operation::read, m_sock.fd(), this);
                 } else if (rb > 0) {
-                    m_reader->consume(m_rd_buf.data(), rb, epd);
+                    m_reader->consume(m_rd_buf.data(), rb, ep);
                 }
                 break;
             }
