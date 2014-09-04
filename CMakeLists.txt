@@ -226,6 +226,9 @@ if(CAF_NO_MEM_MANAGEMENT)
   add_definitions(-DCAF_NO_MEM_MANAGEMENT)
 endif()
 
+if(CAF_FOR_RIOT)
+  add_definitions(-D__RIOTBUILD_FLAG)
+endif()
 
 ################################################################################
 #                           setup for install target                           #
@@ -490,6 +493,7 @@ message(STATUS
         "\nRuntime checks:    ${CAF_ENABLE_RUNTIME_CHECKS}"
         "\nLog level:         ${LOG_LEVEL_STR}"
         "\nWith mem. mgmt.:   ${CAF_BUILD_MEM_MANAGEMENT}"
+        "\nFor RIOT-OS:       ${CAF_FOR_RIOT}"
         "\n"
         "\nBuild examples:    ${CAF_BUILD_EXAMPLES}"
         "\nBuild unit tests:  ${CAF_BUILD_UNIT_TESTS}"
