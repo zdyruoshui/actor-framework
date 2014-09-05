@@ -52,6 +52,7 @@ namespace policy {
 class no_scheduling {
 
  public:
+  using timeout_type = std::chrono::high_resolution_clock::time_point;
   no_scheduling() {
     pthread_mutex_init(&m_mtx, nullptr);
     pthread_cond_init(&m_cv, nullptr);
@@ -75,29 +76,29 @@ class no_scheduling {
     CAF_REQUIRE(self != nullptr);
     CAF_PUSH_AID(self->id());
     CAF_LOG_TRACE(CAF_ARG(self));
-    intrusive_ptr<Actor> mself{self};
+    m_self = reinterpret_cast<void*>(self);
     self->attach_to_scheduler();
-    auto loop = [] () {
+    auto loop = [](void* arg) {
+      auto context = reinterpret_cast<no_scheduling*>(arg);
+      auto mself = reinterpret_cast<Actor*>(context->m_self);
       CAF_PUSH_AID(mself->id());
       CAF_LOG_TRACE("");
       while (mself->resume(nullptr, 0) != resumable::done) {
         // await new data before resuming actor
-        await_data(mself.get());
-        CAF_REQUIRE(self->mailbox().blocked() == false);
+        context->await_data(mself);
+        CAF_REQUIRE(mself->mailbox().blocked() == false);
       }
-      self->detach_from_scheduler();
+      mself->detach_from_scheduler();
+      return static_cast<void*>(NULL);
     };
-
-//    std::thread([=] {
-//      CAF_PUSH_AID(mself->id());
-//      CAF_LOG_TRACE("");
-//      while (mself->resume(nullptr, 0) != resumable::done) {
-//        // await new data before resuming actor
-//        await_data(mself.get());
-//        CAF_REQUIRE(self->mailbox().blocked() == false);
-//      }
-//      self->detach_from_scheduler();
-//    }).detach();
+    auto rc = pthread_create(&m_thread, nullptr, loop, reinterpret_cast<void*>(this));
+    if (rc != 0) {
+      // todo error
+    }
+    rc = pthread_detach(m_thread);
+    if (rc != 0) {
+      // todo error
+    }
   }
 
   // await_data is being called from no_resume (only)
@@ -117,6 +118,10 @@ class no_scheduling {
 
 
  private:
+  // reference to the actor
+  // accessible in the launch lambda through this
+  void* m_self;
+  pthread_t m_thread;
   pthread_mutex_t m_mtx;
   pthread_cond_t m_cv;
 
