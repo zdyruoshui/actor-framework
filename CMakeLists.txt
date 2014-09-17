@@ -25,6 +25,9 @@ endif()
 if(NOT CAF_NO_OPENCL)
   set(CAF_NO_OPENCL no)
 endif()
+if(NOT CAF_FOR_RIOT)
+  set(CAF_FOR_RIOT no)
+endif()
 
 
 ################################################################################
