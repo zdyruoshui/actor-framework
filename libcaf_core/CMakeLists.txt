@@ -80,6 +80,14 @@ set (LIBCAF_CORE_SRCS
      src/uniform_type_info.cpp
      src/uniform_type_info_map.cpp)
 
+if (CAF_FOR_RIOT)
+set (LIBCAF_CORE_SRCS
+     src/thread.cpp
+     src/mutex.cpp
+     src/condition_variable.cpp
+     ${LIBCAF_CORE_SRCS})
+endif()
+
 # build shared library if not compiling static only
 if (NOT "${CAF_BUILD_STATIC_ONLY}" STREQUAL "yes")
   add_library(libcaf_core SHARED ${LIBCAF_CORE_SRCS} ${LIBCAF_CORE_HDRS})

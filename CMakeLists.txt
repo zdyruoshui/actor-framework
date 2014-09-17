@@ -228,6 +228,8 @@ endif()
 
 if(CAF_FOR_RIOT)
   add_definitions(-D__RIOTBUILD_FLAG)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32")
+  set(LD_FLAGS "${LD_FLAGS} -m32")
 endif()
 
 ################################################################################
@@ -275,6 +277,12 @@ endif()
 # all projects need the headers of the core components
 include_directories("${LIBCAF_INCLUDE_DIRS}")
 
+# include files to build for RIOT
+if(CAF_FOR_RIOT)
+  include_directories("${RIOT_BASE_DIR}/sys/include/.")
+  include_directories("${RIOT_BASE_DIR}/core/include/.")
+  include_directories("${RIOT_BASE_DIR}/cpu/native/include/.")
+endif()
 
 ################################################################################
 #                               add subprojects                                #
