@@ -21,7 +21,6 @@
 #define CAF_ABSTRACT_ACTOR_HPP
 
 #include <set>
-#include <mutex>
 #include <atomic>
 #include <memory>
 #include <string>
@@ -32,6 +31,7 @@
 
 #include "caf/fwd.hpp"
 #include "caf/node_id.hpp"
+#include "caf/mutex.hpp"
 #include "caf/attachable.hpp"
 #include "caf/message_id.hpp"
 #include "caf/exit_reason.hpp"
@@ -285,7 +285,7 @@ class abstract_actor : public abstract_channel {
   std::atomic<uint32_t> m_exit_reason;
 
   // guards access to m_exit_reason, m_attachables, and m_links
-  mutable std::mutex m_mtx;
+  mutable mutex m_mtx;
 
   // attached functors that are executed on cleanup (monitors, links, etc)
   attachable_ptr m_attachables_head;

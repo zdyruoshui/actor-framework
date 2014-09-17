@@ -17,10 +17,10 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#include <mutex>
 #include <limits>
 #include <stdexcept>
 
+#include "caf/mutex.hpp"
 #include "caf/attachable.hpp"
 #include "caf/exit_reason.hpp"
 #include "caf/detail/actor_registry.hpp"
@@ -105,7 +105,7 @@ size_t actor_registry::running() const {
 void actor_registry::dec_running() {
   size_t new_val = --m_running;
   if (new_val <= 1) {
-    std::unique_lock<std::mutex> guard(m_running_mtx);
+    unique_lock<mutex> guard(m_running_mtx);
     m_running_cv.notify_all();
   }
   CAF_LOG_DEBUG(CAF_ARG(new_val));
@@ -114,7 +114,7 @@ void actor_registry::dec_running() {
 void actor_registry::await_running_count_equal(size_t expected) {
   CAF_REQUIRE(expected == 0 || expected == 1);
   CAF_LOG_TRACE(CAF_ARG(expected));
-  std::unique_lock<std::mutex> guard{m_running_mtx};
+  unique_lock<mutex> guard{m_running_mtx};
   while (m_running != expected) {
     CAF_LOG_DEBUG("count = " << m_running.load());
     m_running_cv.wait(guard);

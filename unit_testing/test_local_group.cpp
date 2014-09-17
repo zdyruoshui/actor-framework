@@ -1,6 +1,6 @@
-#include <chrono>
 #include "test.hpp"
 #include "caf/all.hpp"
+#include "caf/chrono.hpp"
 
 using namespace caf;
 

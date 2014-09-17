@@ -20,7 +20,9 @@
 #include "caf/config.hpp"
 
 #include <limits>
-#include <thread>
+
+#include "caf/thread.hpp"
+
 #include "caf/detail/shared_spinlock.hpp"
 
 namespace {
@@ -42,7 +44,7 @@ void shared_spinlock::lock() {
   long v = m_flag.load();
   for (;;) {
     if (v != 0) {
-      // std::this_thread::yield();
+      // this_thread::yield();
       v = m_flag.load();
     } else if (m_flag.compare_exchange_weak(v, min_long())) {
       return;
@@ -82,7 +84,7 @@ void shared_spinlock::lock_shared() {
   long v = m_flag.load();
   for (;;) {
     if (v < 0) {
-      // std::this_thread::yield();
+      // this_thread::yield();
       v = m_flag.load();
     } else if (m_flag.compare_exchange_weak(v, v + 1)) {
       return;
