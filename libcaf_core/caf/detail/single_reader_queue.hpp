@@ -83,20 +83,17 @@ class single_reader_queue {
    * @warning Call only from the reader (owner).
    */
   enqueue_result enqueue(pointer new_element) {
-    printf("enqueue start\n");
     CAF_REQUIRE(new_element != nullptr);
     pointer e = m_stack.load();
     for (;;) {
       if (!e) {
         // if tail is nullptr, the queue has been closed
         m_delete(new_element);
-        printf("enqueue return enqueue_result::queue_closed\n");
         return enqueue_result::queue_closed;
       }
       // a dummy is never part of a non-empty list
       new_element->next = is_dummy(e) ? nullptr : e;
       if (m_stack.compare_exchange_strong(e, new_element)) {
-        printf("enqueue return enqueue_result::unblocked_reader or enqueue_result::success\n");
         return  (e == reader_blocked_dummy()) ? enqueue_result::unblocked_reader
                                               : enqueue_result::success;
       }
@@ -233,20 +230,15 @@ class single_reader_queue {
   bool synchronized_enqueue(Mutex& mtx, CondVar& cv, pointer new_element) {
     switch (enqueue(new_element)) {
       case enqueue_result::unblocked_reader: {
-        printf("synchronized_enqueue -> unblocked_reader\n");
         unique_lock<Mutex> guard(mtx);
-        printf("synchronized_enqueue -> unblocked_reader -> created guard\n");
         cv.notify_one();
-        printf("synchronized_enqueue -> unblocked_reader -> notified one\n");
         return true;
       }
       case enqueue_result::success: {
-        printf("synchronized_enqueue -> success\n");
         // enqueued message to a running actor's mailbox
         return true;
       }
       case enqueue_result::queue_closed: {
-        printf("synchronized_enqueue -> queue_closed\n");
         // actor no longer alive
         return false;
       }
