@@ -21,10 +21,10 @@
 #define CAF_IO_NETWORK_MULTIPLEXER_HPP
 
 #include <string>
-#include <thread>
 #include <functional>
 
 #include "caf/extend.hpp"
+#include "caf/thread.hpp"
 #include "caf/memory_managed.hpp"
 
 #include "caf/io/fwd.hpp"
@@ -156,7 +156,7 @@ class multiplexer {
    */
   template <class F>
   void dispatch(F fun) {
-    if (std::this_thread::get_id() == thread_id()) {
+    if (this_thread::get_id() == thread_id()) {
       fun();
       return;
     }
@@ -185,11 +185,11 @@ class multiplexer {
    */
   virtual boost::asio::io_service* pimpl();
 
-  inline const std::thread::id& thread_id() const {
+  inline const thread::id& thread_id() const {
     return m_tid;
   }
 
-  inline void thread_id(std::thread::id tid) {
+  inline void thread_id(thread::id tid) {
     m_tid = std::move(tid);
   }
 
@@ -202,7 +202,7 @@ class multiplexer {
   /**
    * Must be set by the subclass.
    */
-  std::thread::id m_tid;
+  thread::id m_tid;
 };
 
 using multiplexer_ptr = std::unique_ptr<multiplexer>;
