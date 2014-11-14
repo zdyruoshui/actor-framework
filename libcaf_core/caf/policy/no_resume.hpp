@@ -1,8 +1,9 @@
 #ifndef NO_RESUME_HPP
 #define NO_RESUME_HPP
 
-#include <chrono>
 #include <utility>
+
+#include "caf/chrono.hpp"
 
 #include "caf/exception.hpp"
 #include "caf/exit_reason.hpp"

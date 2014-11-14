@@ -20,12 +20,12 @@
 #include "caf/scheduler/abstract_coordinator.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <iostream>
 
 #include "caf/on.hpp"
 #include "caf/send.hpp"
 #include "caf/spawn.hpp"
+#include "caf/chrono.hpp"
 #include "caf/thread.hpp"
 #include "caf/anything.hpp"
 #include "caf/to_string.hpp"
@@ -50,8 +50,6 @@ namespace scheduler {
 
 namespace {
 
-using hrc = std::chrono::high_resolution_clock;
-
 using timer_actor_policies = policy::actor_policies<policy::no_scheduling,
                                                     policy::not_prioritizing,
                                                     policy::no_resume>;
@@ -69,7 +67,7 @@ inline void deliver(delayed_msg& dm) {
 
 template <class Map, class... Ts>
 inline void insert_dmsg(Map& storage, const duration& d, Ts&&... vs) {
-  auto tout = hrc::now();
+  auto tout = now();
   tout += d;
   delayed_msg dmsg{std::forward<Ts>(vs)...};
   storage.insert(std::make_pair(std::move(tout), std::move(dmsg)));
@@ -84,7 +82,7 @@ class timer_actor : public detail::proper_actor<blocking_actor,
     return next_message();
   }
 
-  inline mailbox_element_ptr try_dequeue(const hrc::time_point& tp) {
+  inline mailbox_element_ptr try_dequeue(const time_point& tp) {
     if (scheduling_policy().await_data(this, tp)) {
       return next_message();
     }
@@ -96,7 +94,7 @@ class timer_actor : public detail::proper_actor<blocking_actor,
     // setup & local variables
     bool done = false;
     mailbox_element_ptr msg_ptr;
-    std::multimap<hrc::time_point, delayed_msg> messages;
+    std::multimap<time_point, delayed_msg> messages;
     // message handling rules
     message_handler mfun{
       [&](const duration& d, actor_addr& from, channel& to,
@@ -117,7 +115,7 @@ class timer_actor : public detail::proper_actor<blocking_actor,
         if (messages.empty())
           msg_ptr = dequeue();
         else {
-          auto tout = hrc::now();
+          auto tout = now();
           // handle timeouts (send messages)
           auto it = messages.begin();
           while (it != messages.end() && (it->first) <= tout) {
