@@ -1,4 +1,3 @@
-#include <thread>
 #include <string>
 #include <cstring>
 #include <sstream>
@@ -9,6 +8,8 @@
 #include "ping_pong.hpp"
 
 #include "caf/all.hpp"
+#include "caf/thread.hpp"
+
 #include "caf/io/all.hpp"
 
 #include "caf/detail/logging.hpp"
