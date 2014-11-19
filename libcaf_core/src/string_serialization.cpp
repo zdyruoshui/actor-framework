@@ -22,7 +22,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
-
+#include <iostream> // TODO: remove me!
 #include "caf/string_algorithms.hpp"
 
 #include "caf/atom.hpp"
@@ -234,13 +234,24 @@ class string_deserializer : public deserializer, public dummy_backend {
   const uniform_type_info* begin_object() override {
     skip_space_and_comma();
     string type_name;
-    // shortcuts for built-in types
-    if (*m_pos == '"') {
-      type_name = "@str";
-    } else if (*m_pos == '\'') {
-      type_name = "@atom";
-    } else if (isdigit(*m_pos)) {
-      type_name = "@i32";
+    // ensure object does not start with@
+    // for parser without signature
+    // TODO: ensure it's no type listed in mapped_type_names
+    if (*m_pos != '@') {
+        auto substr_end = next_delimiter();
+        auto substr = string(m_pos, substr_end);
+        if (substr == "true" || substr == "false") {
+          type_name = "bool";
+          m_pos = substr_end;
+        } else if (*m_pos == '"') {
+          type_name = "@str";
+        } else if (*m_pos == '\'') {
+          type_name = "@atom";
+        } else if (isdigit(*m_pos)) {
+          type_name = "@i32";
+        } else {
+          throw_malformed("could not seek object type name");
+        }
     } else {
       auto substr_end = next_delimiter();
       if (m_pos == substr_end) {
