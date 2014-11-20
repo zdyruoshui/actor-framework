@@ -53,6 +53,8 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
                                 - uses RIOT thread impl
                                 - build without memory management
                                 - static build only
+                                - no examples and unit tests
+    --with-toolchain-file=FILE  use the given toolchain file
 
   Installation Directories:
     --prefix=PREFIX             installation directory [/usr/local]
@@ -224,11 +226,17 @@ while [ $# -ne 0 ]; do
             ;;
         --no-compiler-check)
             append_cache_entry NO_COMPILER_CHECK BOOL yes
+            ;;
         --for-riot=*)
             append_cache_entry CAF_FOR_RIOT BOOL yes
             append_cache_entry CAF_NO_MEM_MANAGEMENT BOOL yes
             append_cache_entry CAF_BUILD_STATIC_ONLY STRING yes
             append_cache_entry RIOT_BASE_DIR STRING $optarg
+            append_cache_entry CAF_NO_EXAMPLES STRING yes
+            append_cache_entry CAF_NO_UNIT_TESTS STRING yes
+            ;;
+        --with-toolchain-file=*)
+            append_cache_entry CMAKE_TOOLCHAIN_FILE FILE $optarg
             ;;
         --no-auto-libc++)
             append_cache_entry NO_AUTO_LIBCPP BOOL yes
