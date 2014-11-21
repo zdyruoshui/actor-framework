@@ -79,7 +79,7 @@ endif()
 ################################################################################
 
 # check for g++ >= 4.7 or clang++ > = 3.2
-if(NOT WIN32 AND NOT NO_COMPILER_CHECK AND NOT CAF_OMIT_COMPILER_CHECK)
+if(NOT WIN32 AND NOT NO_COMPILER_CHECK)
   try_run(ProgramResult
           CompilationSucceeded
           "${CMAKE_BINARY_DIR}"
