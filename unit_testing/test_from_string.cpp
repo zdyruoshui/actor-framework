@@ -28,7 +28,7 @@ int main() {
   {
     uint32_t a = 5;
     uint64_t b = 9;
-    auto val = from_string<message>("@<>+u32+u64 (5, 9)");
+    auto val = from_string<message>("@<>+@u32+@u64 (5, 9)");
     CAF_CHECK(val == make_message(a, b));
   }
   {
@@ -36,9 +36,8 @@ int main() {
     CAF_CHECK(val == make_message(atom("add"), 5, 10));
   }
   {
-    // uint32_t
     auto val = from_string<message>("42");
-    CAF_CHECK(val == make_message(42));
+    CAF_CHECK(val == make_message("42"));
   }
   {
     auto val = from_string<message>("'atom' 'atom'");
