@@ -1,6 +1,5 @@
 #include <stack>
 #include <atomic>
-#include <chrono>
 #include <iostream>
 #include <functional>
 
@@ -8,6 +7,7 @@
 #include "ping_pong.hpp"
 
 #include "caf/all.hpp"
+#include "caf/chrono.hpp"
 
 using namespace std;
 using namespace caf;
