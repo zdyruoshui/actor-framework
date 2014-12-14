@@ -470,7 +470,7 @@ class local_actor : public abstract_actor {
   void forward_message(const actor& dest, message_priority mp);
 
   inline bool awaits(message_id response_id) {
-    CAF_REQUIRE(response_id.is_response());
+    CAF_ASSERT(response_id.is_response());
     return std::any_of(m_pending_responses.begin(), m_pending_responses.end(),
                        [=](message_id other) { return response_id == other; });
   }

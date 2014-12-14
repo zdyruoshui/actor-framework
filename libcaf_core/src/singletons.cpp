@@ -133,7 +133,7 @@ logging* singletons::get_logger() {
 }
 
 std::atomic<abstract_singleton*>& singletons::get_plugin_singleton(size_t id) {
-  CAF_REQUIRE(id < max_plugins);
+  CAF_ASSERT(id < max_plugins);
   return s_plugins[id];
 }
 

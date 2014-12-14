@@ -59,7 +59,7 @@ class event_based_resume {
 
     resumable::resume_result resume(execution_unit* new_host,
                                     size_t max_throughput) override {
-      CAF_REQUIRE(max_throughput > 0);
+      CAF_ASSERT(max_throughput > 0);
       auto d = static_cast<Derived*>(this);
       CAF_LOG_TRACE("id = " << d->id());
       d->host(new_host);
@@ -90,7 +90,7 @@ class event_based_resume {
       };
       // actors without behavior or that have already defined
       // an exit reason must not be resumed
-      CAF_REQUIRE(!d->is_initialized()
+      CAF_ASSERT(!d->is_initialized()
                   || (!d->bhvr_stack().empty()
                       && d->planned_exit_reason() == exit_reason::not_exited));
       std::exception_ptr eptr = nullptr;
@@ -144,7 +144,7 @@ class event_based_resume {
                 }
                 break;
               case policy::im_skipped:
-                CAF_REQUIRE(ptr != nullptr);
+                CAF_ASSERT(ptr != nullptr);
                 d->push_to_cache(std::move(ptr));
                 break;
               case policy::im_dropped:

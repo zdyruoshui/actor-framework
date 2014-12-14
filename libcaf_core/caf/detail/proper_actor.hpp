@@ -45,7 +45,7 @@ class proper_actor_base : public Policies::resume_policy::template
 
   template <class... Ts>
   proper_actor_base(Ts&&... args) : super(std::forward<Ts>(args)...) {
-    CAF_REQUIRE(this->is_registered() == false);
+    CAF_ASSERT(this->is_registered() == false);
   }
 
   // member functions from scheduling policy
@@ -239,7 +239,7 @@ class proper_actor<Base, Policies, true>
   // timeout handling
 
   uint32_t request_timeout(const duration& d) {
-    CAF_REQUIRE(d.valid());
+    CAF_ASSERT(d.valid());
     auto tid = ++m_next_timeout_id;
     auto msg = make_message(timeout_msg{tid});
     if (d.is_zero()) {

@@ -253,7 +253,7 @@ class invoke_policy {
     if (msg.match_element<timeout_msg>(0)) {
       auto& tm = msg.get_as<timeout_msg>(0);
       auto tid = tm.timeout_id;
-      CAF_REQUIRE(!mid.valid());
+      CAF_ASSERT(!mid.valid());
       if (self->is_active_timeout(tid)) {
         return msg_type::timeout;
       }
@@ -262,7 +262,7 @@ class invoke_policy {
     }
     if (msg.match_element<exit_msg>(0)) {
       auto& em = msg.get_as<exit_msg>(0);
-      CAF_REQUIRE(!mid.valid());
+      CAF_ASSERT(!mid.valid());
       // make sure to get rid of attachables if they're no longer needed
       self->unlink_from(em.source);
       if (self->trap_exit() == false) {

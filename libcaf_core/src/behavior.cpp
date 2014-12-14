@@ -37,7 +37,7 @@ void behavior::assign(behavior other) {
 }
 
 void behavior::assign(detail::behavior_impl* ptr) {
-  CAF_REQUIRE(ptr != nullptr);
+  CAF_ASSERT(ptr != nullptr);
   m_impl.reset(ptr);
 }
 

@@ -66,12 +66,12 @@ class behavior_stack {
   inline bool empty() const { return m_elements.empty(); }
 
   inline behavior& back() {
-    CAF_REQUIRE(!empty());
+    CAF_ASSERT(!empty());
     return m_elements.back().first;
   }
 
   inline message_id back_id() {
-    CAF_REQUIRE(!empty());
+    CAF_ASSERT(!empty());
     return m_elements.back().second;
   }
 

@@ -87,7 +87,7 @@ class behavior_stack_based_impl : public Base {
   }
 
   behavior& get_behavior() {
-    CAF_REQUIRE(m_bhvr_stack.empty() == false);
+    CAF_ASSERT(m_bhvr_stack.empty() == false);
     return m_bhvr_stack.back();
   }
 

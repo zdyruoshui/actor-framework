@@ -17,50 +17,5 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-#ifndef CAF_PSEUDO_TUPLE_HPP
-#define CAF_PSEUDO_TUPLE_HPP
-
-#include <cstddef>
-
-#include "caf/detail/type_traits.hpp"
-
-namespace caf {
-namespace detail {
-
-// tuple-like access to an array of void pointers
-template <class... T>
-struct pseudo_tuple {
-  using pointer = void*;
-  using const_pointer = const void*;
-
-  pointer data[sizeof...(T) > 0 ? sizeof...(T) : 1];
-
-  inline const_pointer at(size_t p) const { return data[p]; }
-
-  inline pointer mutable_at(size_t p) { return data[p]; }
-
-  inline pointer& operator[](size_t p) { return data[p]; }
-
-};
-
-template <size_t N, class... Ts>
-const typename detail::type_at<N, Ts...>::type&
-get(const detail::pseudo_tuple<Ts...>& tv) {
-  static_assert(N < sizeof...(Ts), "N >= tv.size()");
-  auto vp = tv.at(N);
-  CAF_ASSERT(vp != nullptr);
-  return *reinterpret_cast<const typename detail::type_at<N, Ts...>::type*>(vp);
-}
-
-template <size_t N, class... Ts>
-typename detail::type_at<N, Ts...>::type& get(detail::pseudo_tuple<Ts...>& tv) {
-  static_assert(N < sizeof...(Ts), "N >= tv.size()");
-  auto vp = tv.mutable_at(N);
-  CAF_ASSERT(vp != nullptr);
-  return *reinterpret_cast<typename detail::type_at<N, Ts...>::type*>(vp);
-}
-
-} // namespace detail
-} // namespace caf
-
-#endif // CAF_PSEUDO_TUPLE_HPP
+#include "caf/test/unit_test.hpp"
+#include "caf/test/unit_test_impl.hpp"

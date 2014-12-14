@@ -66,7 +66,7 @@ class no_scheduling {
 
   template <class Actor>
   void launch(Actor* self, execution_unit*, bool) {
-    CAF_REQUIRE(self != nullptr);
+    CAF_ASSERT(self != nullptr);
     CAF_PUSH_AID(self->id());
     CAF_LOG_TRACE(CAF_ARG(self));
     intrusive_ptr<Actor> mself{self};
@@ -78,7 +78,7 @@ class no_scheduling {
       while (mself->resume(nullptr, max_throughput) != resumable::done) {
         // await new data before resuming actor
         await_data(mself.get());
-        CAF_REQUIRE(self->mailbox().blocked() == false);
+        CAF_ASSERT(self->mailbox().blocked() == false);
       }
       self->detach_from_scheduler();
     }).detach();
