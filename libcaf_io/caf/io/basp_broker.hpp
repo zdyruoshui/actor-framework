@@ -70,7 +70,7 @@ class basp_broker : public broker, public actor_namespace::backend {
     std::set<std::string> expected_ifs;
   };
 
-  void init_client(connection_handle hdl, client_handshake_data* data);
+  void init_client(connection_handle hdl, client_handshake_data data);
 
   inline actor_namespace& get_namespace() {
     return m_namespace;
@@ -94,14 +94,13 @@ class basp_broker : public broker, public actor_namespace::backend {
     await_payload,
     // connection is going to be shut down because of an error
     close_connection
-
   };
 
   struct connection_context {
     connection_state state;
     connection_handle hdl;
     id_type remote_id;
-    client_handshake_data* handshake_data;
+    optional<client_handshake_data> handshake_data;
     basp::header hdr;
     // keep a reference to the published actor of
     // the remote node to prevent this particular
@@ -109,7 +108,6 @@ class basp_broker : public broker, public actor_namespace::backend {
     // a bug where re-using an "old" connection via
     // remote_actor() could return an expired proxy
     actor published_actor;
-
   };
 
   void read(binary_deserializer& bs, basp::header& msg);
@@ -130,10 +128,10 @@ class basp_broker : public broker, public actor_namespace::backend {
   void new_data(connection_context& ctx, buffer_type& buf);
 
   void init_handshake_as_client(connection_context& ctx,
-                                client_handshake_data* ptr);
+                                client_handshake_data data);
 
-  void init_handshake_as_sever(connection_context& ctx,
-                               actor_addr published_actor);
+  void init_handshake_as_server(connection_context& ctx,
+                                actor_addr published_actor);
 
   void serialize_msg(const actor_addr& sender, message_id mid,
                      const message& msg, buffer_type& wr_buf);
@@ -195,11 +193,22 @@ class basp_broker : public broker, public actor_namespace::backend {
   std::map<connection_handle, connection_context> m_ctx;
   std::map<accept_handle, std::pair<abstract_actor_ptr, uint16_t>> m_acceptors;
   std::map<uint16_t, accept_handle> m_open_ports;
+  uint16_t m_port;  // broker port for incoming direct connections
   routing_table m_routes; // stores non-direct routes
   std::set<blacklist_entry, blacklist_less> m_blacklist; // stores invalidated
                                // routes
   std::set<pending_request> m_pending_requests;
   //std::map<id_type, connection_handle> m_nodes;
+
+  // tracks in-flight direct_conn_requests with this map when detecting
+  // that we have no direct route to a remote node, to avoid multiple
+  // connection attempts to the same node
+  // TODO: expire stale state state
+  std::set<node_id> m_inflight_conn_reqs;
+
+  // tracks pending responses after having received a direct_conn_request
+  // TODO: expire stale state state
+  std::map<connection_handle, node_id> m_pending_conn_resps;
 
   // needed to keep track to which node we are talking to at the moment
   connection_context* m_current_context;

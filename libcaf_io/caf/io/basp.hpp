@@ -51,7 +51,7 @@ struct header {
  * The current BASP version. Different BASP versions will not
  * be able to exchange messages.
  */
-constexpr uint64_t version = 1;
+constexpr uint64_t version = 2;
 
 /**
  * Size of a BASP header in serialized form
@@ -201,6 +201,56 @@ inline bool kill_proxy_instance_valid(const header& hdr) {
 }
 
 /**
+ * Ask the receiving node to establish a direct connection to
+ * the endpoint described in the payload. The *source_node* field describes the
+ * node which shall receive the `direct_conn_response` message.
+ *
+ * Field          | Assignment
+ * ---------------|----------------------------------------------------------
+ * source_node    | ID of node receiving the response
+ * dest_node      | ID of receiving node
+ * source_actor   | 0
+ * dest_actor     | 0
+ * payload_len    | size of serialized message object, must not be 0
+ * operation_data | 0
+ */
+constexpr uint32_t direct_conn_request = 0x05;
+
+inline bool direct_conn_request_valid(const header& hdr) {
+  return  valid(hdr.source_node)
+       && valid(hdr.dest_node)
+       && hdr.source_node != hdr.dest_node
+       && zero(hdr.source_actor)
+       && zero(hdr.dest_actor)
+       && nonzero(hdr.payload_len)
+       && zero(hdr.operation_data);
+}
+
+/**
+ * Response to a direct connection request. If the connection has been
+ * established successfully, *operation_data* contains 1 and 0 otherwise.
+ *
+ * Field          | Assignment
+ * ---------------|----------------------------------------------------------
+ * source_node    | ID of node that initiated the direct connection
+ * dest_node      | ID of node in the source field of the request
+ * source_actor   | 0
+ * dest_actor     | 0
+ * payload_len    | 0
+ * operation_data | 1 on success and 0 on failure
+ */
+constexpr uint32_t direct_conn_response = 0x06;
+
+inline bool direct_conn_response_valid(const header& hdr) {
+  return  valid(hdr.source_node)
+       && valid(hdr.dest_node)
+       && zero(hdr.source_actor)
+       && zero(hdr.dest_actor)
+       && zero(hdr.payload_len)
+       && hdr.operation_data <= 1;
+}
+
+/**
  * Checks whether given header is valid.
  */
 inline bool valid(header& hdr) {
@@ -217,6 +267,10 @@ inline bool valid(header& hdr) {
       return announce_proxy_instance_valid(hdr);
     case kill_proxy_instance:
       return kill_proxy_instance_valid(hdr);
+    case direct_conn_request:
+      return direct_conn_request_valid(hdr);
+    case direct_conn_response:
+      return direct_conn_response_valid(hdr);
   }
 }
 

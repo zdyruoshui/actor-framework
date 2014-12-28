@@ -132,7 +132,7 @@ inline void caf_check_value(V1 v1, V2 v2, const char* fname, size_t line,
 
 #define CAF_TEST(testname)                                                     \
   ::std::thread([] {                                                           \
-    ::std::this_thread::sleep_for(std::chrono::seconds(10));                   \
+    ::std::this_thread::sleep_for(std::chrono::seconds(100));                   \
     ::std::cerr << "WATCHDOG: unit test did finish within 10s, abort\n";       \
     ::abort();                                                                 \
   }).detach();                                                                 \

@@ -53,7 +53,7 @@ abstract_actor_ptr remote_actor_impl(std::set<std::string> ifs,
     try {
       auto bro = mm->get_named_broker<basp_broker>(atom("_BASP"));
       auto hdl = mm->backend().add_tcp_scribe(bro.get(), host, port);
-      bro->init_client(hdl, &hdata);
+      bro->init_client(hdl, std::move(hdata));
     }
     catch (std::exception& e) {
       err = e.what();
