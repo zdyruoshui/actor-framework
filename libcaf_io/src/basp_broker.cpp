@@ -17,6 +17,7 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
+//#define CAF_LOG_LEVEL CAF_TRACE // FIXME: remove
 #include "caf/io/basp_broker.hpp"
 
 #include "caf/exception.hpp"
@@ -81,6 +82,12 @@ basp_broker::basp_broker(middleman& pref) : broker(pref), m_namespace(*this) {
 }
 
 behavior basp_broker::make_behavior() {
+  // open a new high-level port for direct connections
+  auto mm = middleman::instance();
+  auto hdl = mm->backend().add_tcp_doorman(this, uint16_t{0});
+  m_port = hdl.second;
+  add_published_actor(std::move(hdl.first), this, hdl.second);
+  mm->notify<hook::actor_published>(address(), hdl.second);
   return {
     // received from underlying broker implementation
     [=](new_data_msg& msg) {
@@ -188,6 +195,46 @@ behavior basp_broker::make_behavior() {
                                                  std::set<std::string>()};
       ctx.handshake_data->expected_ifs.swap(expected_ifs);
       init_handshake_as_client(ctx);
+    },
+    // received from BASP broker when establishing a direct connection
+    on(atom("OK"), arg_match) >> [=](const actor& remote) {
+      CAF_LOG_INFO("successfully established direct connection to "
+                   << to_string(remote->node()) << ", sending response");
+      auto route = get_route(remote->node());
+      if (route.invalid()) {
+        CAF_LOG_ERROR("unable to send direct connection reponse: no route to "
+                     << to_string(remote->node()));
+        return;
+      }
+      CAF_REQUIRE(route.node == remote->node());
+      auto i = m_pending_conn_resps.find(route.hdl);
+      CAF_REQUIRE(i != m_pending_conn_resps.end());
+      auto& buf = wr_buf(route.hdl);
+      binary_serializer bs{std::back_inserter(buf), &m_namespace};
+      write(bs, {node(), i->second, 0, 0, 0, basp::direct_conn_response, 1});
+      flush(route.hdl);
+      m_pending_conn_resps.erase(i);
+    },
+    on(atom("ERROR"), arg_match) >> [=](const std::string& msg) {
+      CAF_LOG_ERROR("failed to establish direct connection: " << msg);
+      auto route = get_route(m_current_context->remote_id);
+      if (route.invalid()) {
+        CAF_LOG_ERROR("unable to send direct connection reponse: no route to "
+                     << to_string(m_current_context->remote_id));
+        return;
+      }
+      auto i = m_pending_conn_resps.find(route.hdl);
+      if (i == m_pending_conn_resps.end()) {
+        // TODO: Is it possible to receive this error *not* via the freshly
+        // established direct connection? Then we won't find an entry here and
+        // could rely on a timer-based expiration to send the response
+        CAF_LOG_WARNING("no entry for pending response");
+      } else {
+        auto& buf = wr_buf(route.hdl);
+        binary_serializer bs{std::back_inserter(buf), &m_namespace};
+        write(bs, {node(), i->second, 0, 0, 0, basp::direct_conn_response, 0});
+        flush(route.hdl);
+      }
     },
     // catch-all error handler
     others() >> [=] {
@@ -367,6 +414,36 @@ void basp_broker::dispatch(const actor_addr& from, const actor_addr& to,
   } else {
     parent().notify<hook::message_sent>(from, route_node, to, mid, msg);
   }
+  /*
+  if (route.node != dest) {
+    CAF_LOG_DEBUG("no direct route to " << to_string(dest));
+    // TODO: use blacklist for failing direct connection attempts?
+    if (m_inflight_conn_reqs.find(dest) != m_inflight_conn_reqs.end()) {
+      CAF_LOG_DEBUG("awaiting response to inflight request");
+    } else {
+      CAF_LOG_DEBUG("sending direct connection request");
+      m_inflight_conn_reqs.insert(dest);
+      auto& buf = wr_buf(route.hdl);
+      auto wrpos = static_cast<ptrdiff_t>(buf.size());
+      char padding[basp::header_size];
+      auto before = buf.size();
+      buf.insert(buf.end(), std::begin(padding), std::end(padding));
+      {
+        binary_serializer bs{std::back_inserter(buf), &m_namespace};
+        // TODO: fill in list of IP addresses from this doorman instead.
+        std::string host = "127.0.0.1";
+        bs << host;
+        bs << htons(m_port);
+      }
+      binary_serializer bs{buf.begin() + wrpos, &m_namespace};
+      auto payload_len = buf.size() - before;
+      write(bs, {node(), dest, 0, 0,
+                 static_cast<uint32_t>(payload_len), basp::direct_conn_request,
+                 0});
+      flush(route.hdl);
+    }
+  }
+  */
 }
 
 void basp_broker::read(binary_deserializer& bd, basp::header& msg) {
@@ -414,11 +491,16 @@ basp_broker::handle_basp_header(connection_context& ctx,
   if (hdr.dest_node != invalid_node_id && hdr.dest_node != node()) {
     auto route = get_route(hdr.dest_node);
     if (route.invalid()) {
-      CAF_LOG_INFO("cannot forward message: no route to node "
-                   << to_string(hdr.dest_node));
+      CAF_LOG_ERROR("cannot forward message: no route to node "
+                    << to_string(hdr.dest_node));
       parent().notify<hook::message_forwarding_failed>(hdr.source_node,
                                                        hdr.dest_node, payload);
       return close_connection;
+    }
+    if (hdr.operation == basp::direct_conn_request) {
+      // TODO
+      CAF_LOG_DEBUG("inserting IP address using for communication with "
+                    << to_string(hdr.dest_node));
     }
     CAF_LOG_DEBUG("received message that is not addressed to us -> "
                   << "forward via " << to_string(route.node));
@@ -486,6 +568,11 @@ basp_broker::handle_basp_header(connection_context& ctx,
         return close_connection;
       }
       ctx.remote_id = hdr.source_node;
+      auto i = m_inflight_conn_reqs.find(ctx.remote_id);
+      if (i != m_inflight_conn_reqs.end()) {
+        CAF_LOG_DEBUG("incoming connection for direct connection request");
+        m_inflight_conn_reqs.erase(i);
+      }
       if (node() == ctx.remote_id) {
         CAF_LOG_INFO("incoming connection from self");
         return close_connection;
@@ -590,6 +677,32 @@ basp_broker::handle_basp_header(connection_context& ctx,
       parent().notify<hook::new_connection_established>(nid);
       break;
     }
+    case basp::direct_conn_request: {
+      /*
+      CAF_REQUIRE(payload != nullptr);
+      std::string host;
+      uint16_t port;
+      {
+        binary_deserializer bd{payload->data(), payload->size(), &m_namespace};
+        bd >> host;
+        bd >> port;
+        port = ntohs(port);
+      }
+      auto mm = middleman::instance();
+      auto hdl = mm->backend().add_tcp_scribe(this, host, port);
+      CAF_LOG_DEBUG("established direct connection to " << host << ":" << port);
+      client_handshake_data hs{invalid_node_id, this, std::set<std::string>{}};
+      init_client(hdl, std::move(hs));
+      m_pending_conn_resps.emplace(std::move(hdl), hdr.source_node);
+      */
+      break;
+    }
+    case basp::direct_conn_response: {
+      // TODO: currently nothing happens here, but as soon as an actor can
+      // instruct others to establish direct connections amongst each other,
+      // the response here will indicate success or failure.
+      break;
+    }
   }
   return await_header;
 }
@@ -610,8 +723,11 @@ basp_broker::connection_info basp_broker::get_route(const node_id& dest) {
   if (i != m_routes.end()) {
     auto& entry = i->second;
     res = entry.first;
+    CAF_LOG_DEBUG_IF(!res.invalid(),
+                     "using default route via " << to_string(res.node));
     if (res.invalid() && !entry.second.empty()) {
       res = *entry.second.begin();
+      CAF_LOG_DEBUG("using first auxiliary route via " << to_string(res.node));
     }
   }
   return res;
@@ -671,7 +787,9 @@ void basp_broker::erase_proxy(const node_id& nid, actor_id aid) {
 void basp_broker::add_route(const node_id& nid, connection_handle hdl) {
   if (m_blacklist.count(std::make_pair(nid, hdl)) == 0) {
     parent().notify<hook::new_route_added>(m_current_context->remote_id, nid);
-    m_routes[nid].second.insert({hdl, nid});
+    m_routes[nid].second.insert({hdl, m_current_context->remote_id});
+    CAF_LOG_DEBUG("added new route: " << to_string(nid) << " -> "
+                  << to_string(m_current_context->remote_id));
   }
 }
 
@@ -690,6 +808,7 @@ bool basp_broker::try_set_default_route(const node_id& nid,
 
 void basp_broker::init_handshake_as_client(connection_context& ctx) {
   CAF_LOG_TRACE(CAF_ARG(this));
+  ctx.handshake_data = std::move(data);
   ctx.state = await_server_handshake;
   configure_read(ctx.hdl, receive_policy::exactly(basp::header_size));
 }
@@ -725,7 +844,6 @@ void basp_broker::add_published_actor(accept_handle hdl,
   if (!ptr) {
     return;
   }
-  CAF_LOG_TRACE("");
   m_acceptors.insert(std::make_pair(hdl, std::make_pair(ptr, port)));
   m_open_ports.insert(std::make_pair(port, hdl));
   ptr->attach_functor([port](abstract_actor* self, uint32_t) {
