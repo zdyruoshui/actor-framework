@@ -543,6 +543,13 @@ inline string to_string_impl(const T& what) {
 
 } // namespace detail
 
+bool has_signature(const std::string &what) {
+  return (what.compare(0, 3, "@<>") == 0)
+      && (what != "bool")
+      && (what != "double")
+      && (what != "float");
+}
+
 string to_string(const message& what) {
   return detail::to_string_impl(what);
 }

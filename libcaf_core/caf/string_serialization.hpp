@@ -32,6 +32,8 @@ class exception;
 
 namespace caf {
 
+bool has_signature(const std::string& what);
+
 std::string to_string(const message& what);
 
 std::string to_string(const group& what);
@@ -70,6 +72,9 @@ uniform_value from_string_impl(const std::string& what);
  */
 template <class T>
 optional<T> from_string(const std::string& what) {
+  if (!has_signature(what)) {
+    return none;
+  }
   auto uti = uniform_typeid<T>();
   auto uv = from_string_impl(what);
   if (!uv || (*uv->ti) != typeid(T)) {
