@@ -201,9 +201,11 @@ inline bool kill_proxy_instance_valid(const header& hdr) {
 }
 
 /**
- * Ask the receiving node to establish a direct connection to
- * the endpoint described in the payload. The *source_node* field describes the
- * node which shall receive the `direct_conn_response` message.
+ * Ask the receiving node to establish a direct connection to the endpoint
+ * described in the payload. The *source_node* field describes the node which
+ * shall receive the `direct_conn_response` message. The payload is a message
+ * consisting of a node_id *N*, a string *H*, and an uint16_t *P*. *N* is the
+ * target node, *H* its host name, and *P* identifies the port.
  *
  * Field          | Assignment
  * ---------------|----------------------------------------------------------
@@ -211,7 +213,7 @@ inline bool kill_proxy_instance_valid(const header& hdr) {
  * dest_node      | ID of receiving node
  * source_actor   | 0
  * dest_actor     | 0
- * payload_len    | size of serialized message object, must not be 0
+ * payload_len    | size of serialized data, must not be 0
  * operation_data | 0
  */
 constexpr uint32_t direct_conn_request = 0x05;
@@ -236,8 +238,8 @@ inline bool direct_conn_request_valid(const header& hdr) {
  * dest_node      | ID of node in the source field of the request
  * source_actor   | 0
  * dest_actor     | 0
- * payload_len    | 0
- * operation_data | 1 on success and 0 on failure
+ * payload_len    | size of serialized message object, must not be 0
+ * operation_data | 0
  */
 constexpr uint32_t direct_conn_response = 0x06;
 
@@ -246,8 +248,8 @@ inline bool direct_conn_response_valid(const header& hdr) {
        && valid(hdr.dest_node)
        && zero(hdr.source_actor)
        && zero(hdr.dest_actor)
-       && zero(hdr.payload_len)
-       && hdr.operation_data <= 1;
+       && nonzero(hdr.payload_len)
+       && zero(hdr.operation_data);
 }
 
 /**
