@@ -17,7 +17,6 @@
  * http://www.boost.org/LICENSE_1_0.txt.                                      *
  ******************************************************************************/
 
-//#define CAF_LOG_LEVEL CAF_TRACE // FIXME: remove
 #include "caf/io/basp_broker.hpp"
 
 #include "caf/exception.hpp"
@@ -34,6 +33,8 @@
 #include "caf/io/middleman.hpp"
 #include "caf/io/unpublish.hpp"
 
+#include "caf/io/network/interfaces.hpp"
+
 using std::string;
 
 namespace caf {
@@ -44,30 +45,70 @@ using detail::make_counted;
 
 class connection_slave : public event_based_actor {
  public:
-  connection_slave(actor master) : m_master(master) {
+  connection_slave(actor master)
+      : m_backend(middleman::instance()->backend()),
+        m_master(master) {
     // nop
   }
 
-  behavior make_behavior() {
-    init();
-    return {
+  ~connection_slave();
 
+  behavior make_behavior() {
+    return {
+      [=](std::vector<std::pair<std::string, std::string>>& addresses,
+          uint16_t port, node_id& src, node_id& target) {
+        while (!addresses.empty() && addresses.back().first != "ipv4") {
+          // TODO: add support for IPv6
+          addresses.pop_back();
+        }
+        if (addresses.empty()) {
+          // failure; tell basp_broker to send direct_conn_response
+          send(m_master, error_atom{}, std::move(src), std::move(target));
+          return;
+        }
+        try {
+          auto hdl = m_backend.new_tcp_scribe(addresses.back().second, port);
+          addresses.pop_back();
+          // we got a connection, await handshake
+          send(m_master, get_atom{}, hdl, int64_t{0},
+               this, std::set<std::string>{});
+          become(
+            keep_behavior,
+            [=](ok_atom ok, int64_t, actor_addr) {
+              // success; tell basp_broker to send direct_conn_response
+              send(m_master, ok, src, target);
+              unbecome();
+            },
+            [=](error_atom, int64_t, const std::string&) {
+              // try next address
+              send(this, addresses, port, src, target);
+              unbecome();
+            }
+          );
+        }
+        catch (...) {
+          // try next address
+          addresses.pop_back();
+          send(this, std::move(addresses), port,
+               std::move(src), std::move(target));
+        }
+      },
+      on(atom("INIT")) >> [=] {
+        auto res = m_backend.new_tcp_doorman(0);
+        send(m_master, res.first, res.second);
+      }
     };
   }
 
  private:
-  void init() {
-    /*
-    auto res = network::new_ipv4_acceptor_impl(m_port, in, reuse_addr);
-    auto fd = res.first;
-    m_port = res.second;
-    send(m_master, put_atom{}, fd, m_port);
-    */
-  }
-
+  network::multiplexer& m_backend;
   actor m_master;
-  uint16_t m_port;
 };
+
+connection_slave::~connection_slave() {
+  // nop
+}
+
 
 basp_broker::payload_writer::~payload_writer() {
   // nop
@@ -110,14 +151,18 @@ basp_broker::basp_broker(middleman& pref) : broker(pref), m_namespace(*this) {
 }
 
 behavior basp_broker::make_behavior() {
-  /*
-  // open a new high-level port for direct connections
-  auto mm = middleman::instance();
-  auto hdl = mm->backend().add_tcp_doorman(this, uint16_t{0});
-  m_port = hdl.second;
-  add_published_actor(std::move(hdl.first), this, hdl.second);
-  mm->notify<hook::actor_published>(address(), hdl.second);
-  */
+  if (m_slave == invalid_actor) {
+    // wait until slave opened a local port for us
+    m_slave = spawn<connection_slave, detached + hidden + linked>(this);
+    send(m_slave, atom("INIT"));
+    return {
+      [=](ok_atom, accept_handle hdl, uint16_t default_port) {
+        assign_tcp_doorman(hdl);
+        m_default_port = default_port;
+        become(make_behavior()); // this time for real
+      }
+    };
+  }
   return {
     // received from underlying broker implementation
     [=](new_data_msg& msg) {
@@ -135,7 +180,8 @@ behavior basp_broker::make_behavior() {
       ctx.hdl = msg.handle;
       ctx.handshake_data = none;
       ctx.state = await_client_handshake;
-      init_handshake_as_server(ctx, m_acceptors[msg.source].first->address());
+      auto& ptr = m_acceptors[msg.source].first;
+      init_handshake_as_server(ctx, ptr ? ptr->address() : invalid_actor_addr);
     },
     // received from underlying broker implementation
     [=](const connection_closed_msg& msg) {
@@ -210,8 +256,14 @@ behavior basp_broker::make_behavior() {
     [=](put_atom, accept_handle hdl,
         const actor_addr& whom, uint16_t port) {
       assign_tcp_doorman(hdl);
-      add_published_actor(hdl, actor_cast<abstract_actor_ptr>(whom), port);
-      parent().notify<hook::actor_published>(whom, port);
+      if (whom != invalid_actor_addr) {
+        add_published_actor(hdl, actor_cast<abstract_actor_ptr>(whom), port);
+        parent().notify<hook::actor_published>(whom, port);
+      } else if (last_sender() == m_slave) {
+        // allow only from slave since this remains open until broker exits
+        m_acceptors.insert(std::make_pair(hdl, std::make_pair(nullptr, port)));
+        m_open_ports.insert(std::make_pair(port, hdl));
+      }
     },
     [=](get_atom, connection_handle hdl, int64_t request_id,
         actor client, std::set<std::string>& expected_ifs) {
@@ -227,52 +279,13 @@ behavior basp_broker::make_behavior() {
       init_handshake_as_client(ctx);
     },
     // received from connection slave
-    [=](put_atom, network::native_socket fd, uint16_t port) {
-      auto hdl = add_tcp_doorman(fd);
-      m_open_ports.insert(std::make_pair(port, hdl));
-      /*
-      CAF_LOG_INFO("successfully established direct connection to "
-                   << CAF_TSARG(target_nid) << " (as requested by "
-                   << to_string(source_nid) << "), sending response");
-      auto route = get_route(source_nid);
-      if (route.invalid()) {
-        CAF_LOG_ERROR("unable to send direct connection reponse: no route to "
-                     << CAF_TSARG(source_nid));
-        return;
-      }
-      CAF_REQUIRE(route.node == source_nid);
-      auto i = m_pending_conn_resps.find(route.hdl);
-      if (i != m_pending_conn_resps.end()) {
-        CAF_LOG_ERROR("no pending request found for node " << CAF_TSARG(source_nid));
-        return;
-      }
-      auto& buf = wr_buf(route.hdl);
-      binary_serializer bs{std::back_inserter(buf), &m_namespace};
-      write(bs, {source_nid, i->second, 0, 0, 0, basp::direct_conn_response, 1});
-      flush(route.hdl);
-      m_pending_conn_resps.erase(i);
-      */
-    },
-    [=](error_atom, const node_id& nid, const std::string& msg) {
-      CAF_LOG_ERROR("failed to establish direct connection: " << msg);
-      auto route = get_route(m_current_context->remote_id);
-      if (route.invalid()) {
-        CAF_LOG_ERROR("unable to send direct connection reponse: no route to "
-                     << to_string(m_current_context->remote_id));
-        return;
-      }
-      auto i = m_pending_conn_resps.find(route.hdl);
-      if (i == m_pending_conn_resps.end()) {
-        // TODO: Is it possible to receive this error *not* via the freshly
-        // established direct connection? Then we won't find an entry here and
-        // could rely on a timer-based expiration to send the response
-        CAF_LOG_WARNING("no entry for pending response");
-      } else {
-        auto& buf = wr_buf(route.hdl);
-        binary_serializer bs{std::back_inserter(buf), &m_namespace};
-        write(bs, {node(), i->second, 0, 0, 0, basp::direct_conn_response, 0});
-        flush(route.hdl);
-      }
+    [=](atom_value atm, const node_id& src, const node_id& target) {
+      uint64_t op_data = atm == ok_atom{} ? 1 : 0;
+      auto writer = make_payload_writer([&](binary_serializer& sink) {
+        sink << target;
+      });
+      dispatch(basp::direct_conn_response, node(), invalid_actor_id,
+               src, invalid_actor_id, op_data, &writer);
     },
     // catch-all error handler
     others() >> [=] {
@@ -535,11 +548,6 @@ basp_broker::handle_basp_header(connection_context& ctx,
                                                        hdr.dest_node, payload);
       return close_connection;
     }
-    if (hdr.operation == basp::direct_conn_request) {
-      // TODO
-      CAF_LOG_DEBUG("inserting IP address using for communication with "
-                    << to_string(hdr.dest_node));
-    }
     CAF_LOG_DEBUG("received message that is not addressed to us -> "
                   << "forward via " << to_string(route.node));
     auto& buf = wr_buf(route.hdl);
@@ -716,29 +724,56 @@ basp_broker::handle_basp_header(connection_context& ctx,
       break;
     }
     case basp::direct_conn_request: {
-      /*
       CAF_REQUIRE(payload != nullptr);
-      std::string host;
-      uint16_t port;
+      node_id request_origin;
+      node_id target;
+      uint16_t port = 0;
+      std::vector<std::pair<std::string, std::string>> addresses;
       {
         binary_deserializer bd{payload->data(), payload->size(), &m_namespace};
-        bd >> host;
-        bd >> port;
-        port = ntohs(port);
+        bd.read(request_origin, m_meta_id_type);
+        bd.read(target, m_meta_id_type);
+        if (hdr.operation_data == 0) {
+          bd >> port;
+          uint32_t num_addresses;
+          bd >> num_addresses;
+          for (uint32_t i = 0; i < num_addresses; ++i) {
+            std::pair<std::string, std::string> address;
+            bd >> address.first >> address.second;
+            addresses.push_back(std::move(address));
+          }
+        }
       }
-      auto mm = middleman::instance();
-      auto hdl = mm->backend().add_tcp_scribe(this, host, port);
-      CAF_LOG_DEBUG("established direct connection to " << host << ":" << port);
-      client_handshake_data hs{invalid_node_id, this, std::set<std::string>{}};
-      init_client(hdl, std::move(hs));
-      m_pending_conn_resps.emplace(std::move(hdl), hdr.source_node);
-      */
+      if (hdr.operation_data == 0) {
+        using network::protocol;
+        port = m_default_port;
+        for (auto& addr : network::interfaces::list_addresses(protocol::ipv4)) {
+          addresses.push_back(std::make_pair("ipv4", std::move(addr)));
+        }
+        auto writer = make_payload_writer([&](binary_serializer& sink) {
+          sink.write(request_origin, m_meta_id_type);
+          sink.write(target, m_meta_id_type);
+          sink << port << static_cast<uint32_t>(addresses.size());
+          for (auto& addr : addresses) {
+            sink << addr.first << addr.second;
+          }
+        });
+        // TODO: send direct_conn_response immediately if we already
+        //       have a direct connection to the target
+        dispatch(basp::direct_conn_request, node(), invalid_actor_id,
+                 target, invalid_actor_id, 1, &writer);
+      } else if (target != node()) {
+        CAF_LOG_ERROR("wrong target in received direct_conn_request");
+      } else {
+        send(m_slave, std::move(addresses), port,
+             request_origin, hdr.source_node);
+      }
       break;
     }
     case basp::direct_conn_response: {
-      // TODO: currently nothing happens here, but as soon as an actor can
-      // instruct others to establish direct connections amongst each other,
-      // the response here will indicate success or failure.
+      CAF_REQUIRE(payload == nullptr);
+      // TODO: signalizing stuff, complete handlers, etc.
+      //       and fill add this path to the blacklist on failure
       break;
     }
   }

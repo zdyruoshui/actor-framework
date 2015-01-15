@@ -203,7 +203,7 @@ class basp_broker : public broker, public actor_namespace::backend {
   std::map<connection_handle, connection_context> m_ctx;
   std::map<accept_handle, std::pair<abstract_actor_ptr, uint16_t>> m_acceptors;
   std::map<uint16_t, accept_handle> m_open_ports;
-  uint16_t m_port;  // broker port for incoming direct connections
+  uint16_t m_default_port;  // broker port for incoming direct connections
   routing_table m_routes; // stores non-direct routes
   std::set<blacklist_entry, blacklist_less> m_blacklist; // stores invalidated
                                                          // routes
@@ -221,6 +221,7 @@ class basp_broker : public broker, public actor_namespace::backend {
 
   // needed to keep track to which node we are talking to at the moment
   connection_context* m_current_context;
+  actor m_slave;
 
   // cache some UTIs to make serialization a bit faster
   const uniform_type_info* m_meta_hdr;
