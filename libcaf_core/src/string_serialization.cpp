@@ -64,14 +64,6 @@ bool isbuiltin(const string& type_name) {
   return type_name == "@str" || type_name == "@atom" || type_name == "@tuple";
 }
 
-bool is_without_signature(const string& what) {
-  string s = what.substr(0, 4);
-  return s != "@<>+"
-         && s != "bool"
-         && what.substr(0, 5) != "float"
-         && what.substr(0, 6) != "double";
-}
-
 bool isbool(const string& str) {
   return str == "false" || str == "true";
 }
@@ -304,43 +296,36 @@ class string_deserializer : public deserializer, public dummy_backend {
   using difference_type = string::iterator::difference_type;
 
   string_deserializer(string str)
-      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this){
-    m_known_elems = none;
-    m_pos = m_str.begin();
-  }
-
-  string_deserializer(string str, std::vector<element> elems)
-      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this){
-    m_known_elems = elems;
+      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this) {
     m_pos = m_str.begin();
   }
 
   const uniform_type_info* begin_object() override {
-    if (! without_signature()) {
-      auto elem = m_known_elems->front();
-      if (! elem.type) {
-        throw_malformed("could not find type without signature");
-      }
-      auto type_name = *(elem.type);
-      m_open_objects.push(type_name);
-      return get_uti_by_type_name(type_name);
-    }
     skip_space_and_comma();
     auto substr_end = next_delimiter();
     if (m_pos == substr_end) {
-      throw_malformed("could not seek object type name");
+      throw_malformed("could not seek object or object type name");
     }
-    auto type_name = string(m_pos, substr_end);
+    auto substr = string(m_pos, substr_end);
     m_pos = substr_end;
-    m_open_objects.push(type_name);
     skip_space_and_comma();
+    string type_name = substr;
+    if (without_signature()) {
+      type_name = get_type_name(substr);
+      element elem {type_name, substr};
+      // just store substr and read value later
+      m_known_elems.push_back(elem);
+      return get_uti_by_type_name(type_name);
+    }
+    m_open_objects.push(type_name);
     // suppress leading parenthesis for built-in types
     m_obj_had_left_parenthesis.push(try_consume('('));
     return get_uti_by_type_name(type_name);
   }
 
   void end_object() override {
-    if (m_open_objects.empty()) {
+    // TODO: check if line below is correct
+    if (m_open_objects.empty() && m_known_elems.empty()) {
       throw std::runtime_error("no object to end");
     }
     if (m_obj_had_left_parenthesis.top() == true) {
@@ -404,7 +389,8 @@ class string_deserializer : public deserializer, public dummy_backend {
     }
   };
 
-  void read_value(primitizve_variant& storage) override {
+  void read_value(primitive_variant& storage) override {
+    // TODO: read value from m_known_types when it's without signature
     integrity_check();
     skip_space_and_comma();
     if (m_open_objects.top() == "@node") {
@@ -534,11 +520,15 @@ class string_deserializer : public deserializer, public dummy_backend {
   std::stack<bool> m_obj_had_left_parenthesis;
   std::stack<string> m_open_objects;
   // known elements for parsing without signature
-  optional<std::vector<element>> m_known_elems;
+  std::vector<element> m_known_elems;
   actor_namespace m_namespace;
 
   bool without_signature() {
-    return !m_known_elems.valid();
+    auto substr = m_str.substr(0, 4);
+    return substr != "@<>+"
+           && substr != "bool"
+           && m_str.substr(0, 5) != "float"
+           && m_str.substr(0, 6) != "double";
   }
 
   void skip_space_and_comma() {
@@ -699,20 +689,6 @@ ostream& operator<<(ostream& out, skip_message_t) {
 }
 
 uniform_value from_string_impl(const string& what) {
-  if (is_without_signature(what)) {
-    std::vector<string> words;
-    split(words, what, " ");
-    std::vector<element> elems;
-    for (string word : words) {
-        auto type = get_type_name(word);
-        if (!type) {
-          return {};
-        }
-        element elem {type, word};
-        elems.push_back(elem);
-    }
-    string_deserializer strd(what, elems);
-  }
   string_deserializer strd(what);
   try {
     auto utype = strd.begin_object();
