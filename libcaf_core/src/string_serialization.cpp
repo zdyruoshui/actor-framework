@@ -22,7 +22,6 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
-#include <iostream> // TODO: remove me!
 #include "caf/string_algorithms.hpp"
 
 #include "caf/atom.hpp"
@@ -53,8 +52,86 @@ namespace caf {
 
 namespace {
 
+/**
+ * @brief Store type and value for from_string without signatur.
+ */
+struct element {
+  optional<std::string> type; // or store uniform_type_info?
+  std::string value;
+};
+
 bool isbuiltin(const string& type_name) {
   return type_name == "@str" || type_name == "@atom" || type_name == "@tuple";
+}
+
+bool is_without_signature(const string& what) {
+  string s = what.substr(0, 4);
+  return s != "@<>+"
+         && s != "bool"
+         && what.substr(0, 5) != "float"
+         && what.substr(0, 6) != "double";
+}
+
+bool isbool(const string& str) {
+  return str == "false" || str == "true";
+}
+
+bool begins_and_ends_with(const string& str, const char& c) {
+  return str.front() == c && str.back() == c;
+}
+
+bool isstring(const string& str) {
+  return begins_and_ends_with(str, '"');
+}
+
+bool isatom(const string& str) {
+  return begins_and_ends_with(str, '\'');
+}
+
+bool isinteger(const string& str) {
+  try {
+    stoi(str);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool isfloat(const string& str) {
+  try {
+    stof(str);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+optional<std::string> get_type_name(const std::string& word) {
+  if (isbool(word)) {
+    return {"bool"};
+  } else if (isfloat(word)) {
+    return {"float"};
+  } else if (isstring(word)) {
+    return {"@str"};
+  } else if (isatom(word)) {
+    return {"@atom"};
+  } else if (isinteger(word)) {
+    return {"@int32"};
+  } else {
+    return none;
+  }
+}
+
+const uniform_type_info* get_uti_by_type_name(const string& type_name) {
+  auto uti_map = detail::singletons::get_uniform_type_info_map();
+  auto res = uti_map->by_uniform_name(type_name);
+  if (!res) {
+    std::string err = "read type name \"";
+    err += type_name;
+    err += "\" but no such type is known";
+    throw std::runtime_error(err);
+  }
+  return res;
 }
 
 class dummy_backend : public actor_namespace::backend {
@@ -227,52 +304,39 @@ class string_deserializer : public deserializer, public dummy_backend {
   using difference_type = string::iterator::difference_type;
 
   string_deserializer(string str)
-      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this) {
+      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this){
+    m_known_elems = none;
+    m_pos = m_str.begin();
+  }
+
+  string_deserializer(string str, std::vector<element> elems)
+      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this){
+    m_known_elems = elems;
     m_pos = m_str.begin();
   }
 
   const uniform_type_info* begin_object() override {
-    skip_space_and_comma();
-    string type_name;
-    // ensure object does not start with@
-    // for parser without signature
-    // TODO: ensure it's no type listed in mapped_type_names
-    if (*m_pos != '@') {
-        auto substr_end = next_delimiter();
-        auto substr = string(m_pos, substr_end);
-        if (substr == "true" || substr == "false") {
-          type_name = "bool";
-          m_pos = substr_end;
-        } else if (*m_pos == '"') {
-          type_name = "@str";
-        } else if (*m_pos == '\'') {
-          type_name = "@atom";
-        } else if (isdigit(*m_pos)) {
-          type_name = "@i32";
-        } else {
-          throw_malformed("could not seek object type name");
-        }
-    } else {
-      auto substr_end = next_delimiter();
-      if (m_pos == substr_end) {
-        throw_malformed("could not seek object type name");
+    if (! without_signature()) {
+      auto elem = m_known_elems->front();
+      if (! elem.type) {
+        throw_malformed("could not find type without signature");
       }
-      type_name = string(m_pos, substr_end);
-      m_pos = substr_end;
+      auto type_name = *(elem.type);
+      m_open_objects.push(type_name);
+      return get_uti_by_type_name(type_name);
     }
+    skip_space_and_comma();
+    auto substr_end = next_delimiter();
+    if (m_pos == substr_end) {
+      throw_malformed("could not seek object type name");
+    }
+    auto type_name = string(m_pos, substr_end);
+    m_pos = substr_end;
     m_open_objects.push(type_name);
     skip_space_and_comma();
     // suppress leading parenthesis for built-in types
     m_obj_had_left_parenthesis.push(try_consume('('));
-    auto uti_map = detail::singletons::get_uniform_type_info_map();
-    auto res = uti_map->by_uniform_name(type_name);
-    if (!res) {
-      std::string err = "read type name \"";
-      err += type_name;
-      err += "\" but no such type is known";
-      throw std::runtime_error(err);
-    }
-    return res;
+    return get_uti_by_type_name(type_name);
   }
 
   void end_object() override {
@@ -340,7 +404,7 @@ class string_deserializer : public deserializer, public dummy_backend {
     }
   };
 
-  void read_value(primitive_variant& storage) override {
+  void read_value(primitizve_variant& storage) override {
     integrity_check();
     skip_space_and_comma();
     if (m_open_objects.top() == "@node") {
@@ -469,7 +533,13 @@ class string_deserializer : public deserializer, public dummy_backend {
   // size_t m_obj_count;
   std::stack<bool> m_obj_had_left_parenthesis;
   std::stack<string> m_open_objects;
+  // known elements for parsing without signature
+  optional<std::vector<element>> m_known_elems;
   actor_namespace m_namespace;
+
+  bool without_signature() {
+    return !m_known_elems.valid();
+  }
 
   void skip_space_and_comma() {
     while (*m_pos == ' ' || *m_pos == ',')
@@ -629,6 +699,20 @@ ostream& operator<<(ostream& out, skip_message_t) {
 }
 
 uniform_value from_string_impl(const string& what) {
+  if (is_without_signature(what)) {
+    std::vector<string> words;
+    split(words, what, " ");
+    std::vector<element> elems;
+    for (string word : words) {
+        auto type = get_type_name(word);
+        if (!type) {
+          return {};
+        }
+        element elem {type, word};
+        elems.push_back(elem);
+    }
+    string_deserializer strd(what, elems);
+  }
   string_deserializer strd(what);
   try {
     auto utype = strd.begin_object();
