@@ -55,7 +55,7 @@ namespace {
 /**
  * @brief Store type and value for from_string without signatur.
  */
-struct element {
+struct token {
   optional<std::string> type; // or store uniform_type_info?
   std::string value;
 };
@@ -112,6 +112,33 @@ optional<std::string> get_type_name(const std::string& word) {
   } else {
     return none;
   }
+}
+
+// TODO: parse correct!
+// statemachine?
+void tokenize(std::vector<token>& elems, const string& str) {
+  auto itr = str.begin();
+  std::stringstream sstream;
+  while(itr < str.end()) {
+    char c = *itr;
+    sstream << c;
+    if (itr == )
+    if (found_something) {
+
+      token t {sstream.str()};
+      elems.push_back(t);
+      sstream = std::stringstream();
+    }
+    itr++;
+  }
+}
+
+bool without_signature(const string& str) {
+  auto substr = str.substr(0, 4);
+  return substr != "@<>+"
+         && substr != "bool"
+         && str.substr(0, 5) != "float"
+         && str.substr(0, 6) != "double";
 }
 
 const uniform_type_info* get_uti_by_type_name(const string& type_name) {
@@ -289,6 +316,7 @@ class string_serializer : public serializer, public dummy_backend {
   }
 };
 
+
 class string_deserializer : public deserializer, public dummy_backend {
  public:
   using super = deserializer;
@@ -298,9 +326,20 @@ class string_deserializer : public deserializer, public dummy_backend {
   string_deserializer(string str)
       : super(&m_namespace), m_str(std::move(str)), m_namespace(*this) {
     m_pos = m_str.begin();
+    m_known_elems = none;
+  }
+
+  string_deserializer(string str, std::vector<string> elements)
+      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this),
+        m_known_elems(elements) {
+    m_pos = m_str.begin();
   }
 
   const uniform_type_info* begin_object() override {
+    if (without_signature()) {
+      auto elem = m_known_elems->front();
+      return get_uti_by_type_name(elem.type);
+    }
     skip_space_and_comma();
     auto substr_end = next_delimiter();
     if (m_pos == substr_end) {
@@ -310,13 +349,6 @@ class string_deserializer : public deserializer, public dummy_backend {
     m_pos = substr_end;
     skip_space_and_comma();
     string type_name = substr;
-    if (without_signature()) {
-      type_name = get_type_name(substr);
-      element elem {type_name, substr};
-      // just store substr and read value later
-      m_known_elems.push_back(elem);
-      return get_uti_by_type_name(type_name);
-    }
     m_open_objects.push(type_name);
     // suppress leading parenthesis for built-in types
     m_obj_had_left_parenthesis.push(try_consume('('));
@@ -324,8 +356,7 @@ class string_deserializer : public deserializer, public dummy_backend {
   }
 
   void end_object() override {
-    // TODO: check if line below is correct
-    if (m_open_objects.empty() && m_known_elems.empty()) {
+    if (m_open_objects.empty()) {
       throw std::runtime_error("no object to end");
     }
     if (m_obj_had_left_parenthesis.top() == true) {
@@ -390,7 +421,6 @@ class string_deserializer : public deserializer, public dummy_backend {
   };
 
   void read_value(primitive_variant& storage) override {
-    // TODO: read value from m_known_types when it's without signature
     integrity_check();
     skip_space_and_comma();
     if (m_open_objects.top() == "@node") {
@@ -520,16 +550,8 @@ class string_deserializer : public deserializer, public dummy_backend {
   std::stack<bool> m_obj_had_left_parenthesis;
   std::stack<string> m_open_objects;
   // known elements for parsing without signature
-  std::vector<element> m_known_elems;
+  optional<std::vector<token>> m_known_elems;
   actor_namespace m_namespace;
-
-  bool without_signature() {
-    auto substr = m_str.substr(0, 4);
-    return substr != "@<>+"
-           && substr != "bool"
-           && m_str.substr(0, 5) != "float"
-           && m_str.substr(0, 6) != "double";
-  }
 
   void skip_space_and_comma() {
     while (*m_pos == ' ' || *m_pos == ',')
@@ -538,6 +560,10 @@ class string_deserializer : public deserializer, public dummy_backend {
 
   void throw_malformed(const string& error_msg) {
     throw std::runtime_error("malformed string: " + error_msg);
+  }
+
+  bool without_signature() {
+    return m_known_elems.valid();
   }
 
   void consume(char c) {
@@ -582,7 +608,8 @@ class string_deserializer : public deserializer, public dummy_backend {
   }
 
   void integrity_check() {
-    if (m_open_objects.empty() || m_obj_had_left_parenthesis.empty()) {
+    if (m_open_objects.empty()
+        || m_obj_had_left_parenthesis.empty()) {
       throw_malformed("missing begin_object()");
     }
     if (m_obj_had_left_parenthesis.top() == false
@@ -689,7 +716,14 @@ ostream& operator<<(ostream& out, skip_message_t) {
 }
 
 uniform_value from_string_impl(const string& what) {
-  string_deserializer strd(what);
+  string_deserializer strd;
+  if (without_signature(what)) {
+    std::vector<token> elements;
+    tokenize(elements, what);
+    strd = string_deserializer(what, elements);
+  } else {
+    strd = string_deserializer(what);
+  }
   try {
     auto utype = strd.begin_object();
     if (utype) {
