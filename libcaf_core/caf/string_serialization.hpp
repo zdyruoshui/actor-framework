@@ -23,6 +23,7 @@
 #include <string>
 
 #include "caf/fwd.hpp"
+#include "caf/message.hpp"
 #include "caf/optional.hpp"
 #include "caf/uniform_type_info.hpp"
 
@@ -69,26 +70,43 @@ std::string to_verbose_string(const std::exception& e);
  */
 uniform_value from_string_impl(const std::string& what);
 
+optional<message> message_from_string(const std::string& what);
+
+template <class T>
+struct from_string_helper {
+  optional<T> operator()(const std::string& what) {
+    auto uti = uniform_typeid<T>();
+    auto uv = from_string_impl(what);
+    if (!uv || (*uv->ti) != typeid(T)) {
+      // try again using the type name
+      std::string tmp = uti->name();
+      tmp += " ( ";
+      tmp += what;
+      tmp += " )";
+      uv = from_string_impl(tmp);
+    }
+    if (uv && (*uv->ti) == typeid(T)) {
+      return std::move(*reinterpret_cast<T*>(uv->val));
+    }
+    return none;
+  }
+};
+
+template <>
+struct from_string_helper<message> {
+  optional<message> operator()(const std::string& what) {
+    return message_from_string(what);
+  }
+};
+
 /**
  * Convenience function that tries to deserializes a value from
  * `what` and converts the result to `T`.
  */
 template <class T>
 optional<T> from_string(const std::string& what) {
-  auto uti = uniform_typeid<T>();
-  auto uv = from_string_impl(what);
-  if (!uv || (*uv->ti) != typeid(T)) {
-    // try again using the type name
-    std::string tmp = uti->name();
-    tmp += " ( ";
-    tmp += what;
-    tmp += " )";
-    uv = from_string_impl(tmp);
-  }
-  if (uv && (*uv->ti) == typeid(T)) {
-    return T{std::move(*reinterpret_cast<T*>(uv->val))};
-  }
-  return none;
+  from_string_helper<T> f;
+  return f(what);
 }
 
 } // namespace caf

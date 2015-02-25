@@ -21,8 +21,9 @@
 #include <cctype>
 #include <sstream>
 #include <iomanip>
+#include <iostream>
 #include <algorithm>
-#include "caf/string_algorithms.hpp"
+#include <functional>
 
 #include "caf/atom.hpp"
 #include "caf/actor.hpp"
@@ -35,11 +36,13 @@
 #include "caf/from_string.hpp"
 #include "caf/deserializer.hpp"
 #include "caf/skip_message.hpp"
+#include "caf/message_builder.hpp"
 #include "caf/actor_namespace.hpp"
 #include "caf/primitive_variant.hpp"
 #include "caf/uniform_type_info.hpp"
 
 #include "caf/detail/singletons.hpp"
+#include "caf/string_algorithms.hpp"
 #include "caf/detail/uniform_type_info_map.hpp"
 
 using std::string;
@@ -48,6 +51,9 @@ using std::u16string;
 using std::u32string;
 using std::istringstream;
 
+#define DEBUG_DESERIALIZE(line) \
+  std::cout << line << std::endl;
+
 namespace caf {
 
 namespace {
@@ -55,8 +61,8 @@ namespace {
 /**
  * @brief Store type and value for from_string without signatur.
  */
-struct token {
-  optional<std::string> type; // or store uniform_type_info?
+struct element {
+  std::string type; // or store uniform_type_info?
   std::string value;
 };
 
@@ -64,81 +70,94 @@ bool isbuiltin(const string& type_name) {
   return type_name == "@str" || type_name == "@atom" || type_name == "@tuple";
 }
 
-bool isbool(const string& str) {
-  return str == "false" || str == "true";
+bool append_bool(message_builder& mb, char* first, char* last) {
+  // TODO: work around for creating a new string
+  string word(first, last);
+  if (word == "true") {
+    mb.append(true);
+  } else if (word == "false"){
+    mb.append(false);
+  }
+  return false;
 }
 
-bool begins_and_ends_with(const string& str, const char& c) {
-  return str.front() == c && str.back() == c;
-}
-
-bool isstring(const string& str) {
-  return begins_and_ends_with(str, '"');
-}
-
-bool isatom(const string& str) {
-  return begins_and_ends_with(str, '\'');
-}
-
-bool isinteger(const string& str) {
-  try {
-    stoi(str);
+bool append_integer(message_builder& mb, char* first, char* last) {
+  char* pos;
+  int result = strtol(first, &pos, 10);
+  if (pos == last) {
+    mb.append(result);
     return true;
-  } catch (...) {
-    return false;
   }
+  return false;
 }
 
-bool isfloat(const string& str) {
-  try {
-    stof(str);
+bool append_float(message_builder& mb, char* first, char* last) {
+  char* pos;
+  auto res = strtof(first, &pos);
+  if (pos == last) {
+    mb.append(res);
     return true;
-  } catch (...) {
-    return false;
   }
+  return false;
 }
 
-optional<std::string> get_type_name(const std::string& word) {
-  if (isbool(word)) {
-    return {"bool"};
-  } else if (isfloat(word)) {
-    return {"float"};
-  } else if (isstring(word)) {
-    return {"@str"};
-  } else if (isatom(word)) {
-    return {"@atom"};
-  } else if (isinteger(word)) {
-    return {"@int32"};
-  } else {
-    return none;
-  }
+bool append_string(message_builder& mb, char* first, char* last) {
+  // create string without beginning and end quotes
+  string str(first+1, last-1);
+  mb.append(str);
+  return true;
 }
 
-// TODO: parse correct!
-// statemachine?
-void tokenize(std::vector<token>& elems, const string& str) {
-  auto itr = str.begin();
-  std::stringstream sstream;
-  while(itr < str.end()) {
-    char c = *itr;
-    sstream << c;
-    if (itr == )
-    if (found_something) {
-
-      token t {sstream.str()};
-      elems.push_back(t);
-      sstream = std::stringstream();
+optional<message> parse_msg(const string& str) {
+  using namespace std;
+  message_builder mb;
+  auto is_separator = [](char c) -> bool {
+    switch (c) {
+      case '"':
+      case '\'':
+      case ' ':
+        return true;
+      default:
+        return false;
     }
-    itr++;
+  };
+
+  auto find_word_end = [str](string::iterator pos, char needle) ->
+                                                              string::iterator {
+    bool not_done = true;
+    while(not_done && pos < str.end()) {
+      if (*pos == needle) {
+
+      }
+      pos++;
+    }
+  };
+  auto pos = find_if(str.begin(), str.end(), not1(isspace));
+  auto last = str.end();
+  while (pos != last) {
+    auto separator = std::find_if(pos + 1, last, is_separator);
+    if (*pos == '"' || *pos == '\'') {
+      auto word_end = find_word_end(*pos);
+      string word(*pos, word_end);
+    } else {
+      if (!append_bool(mb, pos, separator)
+          || !append_float(mb, pos, separator)
+          || !append_integer(mb, pos, separator)) {
+        return none;
+      }
+    }
+    // set position for next iteration
+    if (separator == last) {
+      pos = last;
+    } else {
+      pos = find_if(separator + 1, last, not1(::isspace));
+    }
   }
+  return mb.to_message();
 }
 
-bool without_signature(const string& str) {
-  auto substr = str.substr(0, 4);
-  return substr != "@<>+"
-         && substr != "bool"
-         && str.substr(0, 5) != "float"
-         && str.substr(0, 6) != "double";
+bool with_signature(const string& str) {
+  return str.compare(0, 3, "@<>");
 }
 
 const uniform_type_info* get_uti_by_type_name(const string& type_name) {
@@ -160,9 +179,6 @@ class dummy_backend : public actor_namespace::backend {
   }
 };
 
-// serializes types as type_name(...) except:
-// - strings are serialized "..."
-// - atoms are serialized '...'
 class string_serializer : public serializer, public dummy_backend {
  public:
   using super = serializer;
@@ -326,33 +342,39 @@ class string_deserializer : public deserializer, public dummy_backend {
   string_deserializer(string str)
       : super(&m_namespace), m_str(std::move(str)), m_namespace(*this) {
     m_pos = m_str.begin();
-    m_known_elems = none;
-  }
-
-  string_deserializer(string str, std::vector<string> elements)
-      : super(&m_namespace), m_str(std::move(str)), m_namespace(*this),
-        m_known_elems(elements) {
-    m_pos = m_str.begin();
   }
 
   const uniform_type_info* begin_object() override {
-    if (without_signature()) {
-      auto elem = m_known_elems->front();
-      return get_uti_by_type_name(elem.type);
-    }
     skip_space_and_comma();
-    auto substr_end = next_delimiter();
-    if (m_pos == substr_end) {
-      throw_malformed("could not seek object or object type name");
+    string type_name;
+    // shortcuts for built-in types
+    if (*m_pos == '"') {
+      type_name = "@str";
+    } else if (*m_pos == '\'') {
+      type_name = "@atom";
+    } else if (isdigit(*m_pos)) {
+      type_name = "@i32";
+    } else {
+      auto substr_end = next_delimiter();
+      if (m_pos == substr_end) {
+        throw_malformed("could not seek object type name");
+      }
+      type_name = string(m_pos, substr_end);
+      m_pos = substr_end;
     }
-    auto substr = string(m_pos, substr_end);
-    m_pos = substr_end;
-    skip_space_and_comma();
-    string type_name = substr;
     m_open_objects.push(type_name);
+    skip_space_and_comma();
     // suppress leading parenthesis for built-in types
     m_obj_had_left_parenthesis.push(try_consume('('));
-    return get_uti_by_type_name(type_name);
+    auto uti_map = detail::singletons::get_uniform_type_info_map();
+    auto res = uti_map->by_uniform_name(type_name);
+    if (!res) {
+      std::string err = "read type name \"";
+      err += type_name;
+      err += "\" but no such type is known";
+      throw std::runtime_error(err);
+    }
+    return res;
   }
 
   void end_object() override {
@@ -549,8 +571,6 @@ class string_deserializer : public deserializer, public dummy_backend {
   // size_t m_obj_count;
   std::stack<bool> m_obj_had_left_parenthesis;
   std::stack<string> m_open_objects;
-  // known elements for parsing without signature
-  optional<std::vector<token>> m_known_elems;
   actor_namespace m_namespace;
 
   void skip_space_and_comma() {
@@ -560,10 +580,6 @@ class string_deserializer : public deserializer, public dummy_backend {
 
   void throw_malformed(const string& error_msg) {
     throw std::runtime_error("malformed string: " + error_msg);
-  }
-
-  bool without_signature() {
-    return m_known_elems.valid();
   }
 
   void consume(char c) {
@@ -716,14 +732,7 @@ ostream& operator<<(ostream& out, skip_message_t) {
 }
 
 uniform_value from_string_impl(const string& what) {
-  string_deserializer strd;
-  if (without_signature(what)) {
-    std::vector<token> elements;
-    tokenize(elements, what);
-    strd = string_deserializer(what, elements);
-  } else {
-    strd = string_deserializer(what);
-  }
+  string_deserializer strd(what);
   try {
     auto utype = strd.begin_object();
     if (utype) {
@@ -735,6 +744,17 @@ uniform_value from_string_impl(const string& what) {
     // ignored, i.e., return an invalid value
   }
   return {};
+}
+
+optional<message> message_from_string(const std::string& what) {
+  if (with_signature(what)) {
+    auto uv = from_string_impl(what);
+    if (uv && (*uv->ti) == typeid(message)) {
+      return std::move(*reinterpret_cast<message*>(uv->val));
+    }
+    return none;
+  }
+  return parse_msg(what);
 }
 
 } // namespace caf
