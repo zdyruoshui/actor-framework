@@ -50,6 +50,7 @@ using std::ostream;
 using std::u16string;
 using std::u32string;
 using std::istringstream;
+using const_citer = string::const_iterator;
 
 #define DEBUG_DESERIALIZE(line) \
   std::cout << line << std::endl;
@@ -70,7 +71,7 @@ bool isbuiltin(const string& type_name) {
   return type_name == "@str" || type_name == "@atom" || type_name == "@tuple";
 }
 
-bool append_bool(message_builder& mb, char* first, char* last) {
+bool append_bool(message_builder& mb, const char* first, const char* last) {
   // TODO: work around for creating a new string
   string word(first, last);
   if (word == "true") {
@@ -81,7 +82,7 @@ bool append_bool(message_builder& mb, char* first, char* last) {
   return false;
 }
 
-bool append_integer(message_builder& mb, char* first, char* last) {
+bool append_integer(message_builder& mb, const char* first, const char* last) {
   char* pos;
   int result = strtol(first, &pos, 10);
   if (pos == last) {
@@ -91,7 +92,7 @@ bool append_integer(message_builder& mb, char* first, char* last) {
   return false;
 }
 
-bool append_float(message_builder& mb, char* first, char* last) {
+bool append_float(message_builder& mb, const char* first, const char* last) {
   char* pos;
   auto res = strtof(first, &pos);
   if (pos == last) {
@@ -99,13 +100,6 @@ bool append_float(message_builder& mb, char* first, char* last) {
     return true;
   }
   return false;
-}
-
-bool append_string(message_builder& mb, char* first, char* last) {
-  // create string without beginning and end quotes
-  string str(first+1, last-1);
-  mb.append(str);
-  return true;
 }
 
 optional<message> parse_msg(const string& str) {
@@ -121,24 +115,54 @@ optional<message> parse_msg(const string& str) {
         return false;
     }
   };
-
-  auto find_word_end = [str](string::iterator pos, char needle) ->
-                                                              string::iterator {
-    bool not_done = true;
-    while(not_done && pos < str.end()) {
-      if (*pos == needle) {
-
-      }
-      pos++;
-    }
-  };
-  auto pos = find_if(str.begin(), str.end(), not1(isspace));
-  auto last = str.end();
+  auto last = str.c_str() + str.size(); // make sure we get a const char*
+  auto pos = find_if(str.c_str(), last, [](char c) { return !isspace(c); });
   while (pos != last) {
     auto separator = std::find_if(pos + 1, last, is_separator);
     if (*pos == '"' || *pos == '\'') {
-      auto word_end = find_word_end(*pos);
-      string word(*pos, word_end);
+      auto needle = *pos;
+      string accu;
+      bool end_found = false;
+      while (!end_found) {
+        if (*pos == '\\') {
+          switch (*(++pos))  {
+            case '\\':
+              accu += '\\';
+              break;
+            case 'b':
+              accu += '\b';
+              break;
+            case 't':
+              accu += '\t';
+              break;
+            case 'v':
+              accu += '\v';
+              break;
+            case '"':
+              accu += '"';
+              break;
+            case 'n':
+              accu += '\n';
+              break;
+            default:
+              // irgnore unknown escapes
+          }
+        } else if (*pos == needle) {
+          end_found = true;
+        } else {
+          accu += *pos;
+        }
+        pos++;
+      }
+      if (needle == '\'') {
+        auto atom = from_string<atom_value>(accu);
+        if (!atom) {
+          return none;
+        }
+        mb.append(atom);
+      } else {
+        mb.append(accu);
+      }
     } else {
       if (!append_bool(mb, pos, separator)
           || !append_float(mb, pos, separator)
@@ -150,7 +174,7 @@ optional<message> parse_msg(const string& str) {
     if (separator == last) {
       pos = last;
     } else {
-      pos = find_if(separator + 1, last, not1(::isspace));
+      pos = find_if(separator + 1, last, [](char c) { return !isspace(c); });
     }
   }
   return mb.to_message();
@@ -158,18 +182,6 @@ optional<message> parse_msg(const string& str) {
 
 bool with_signature(const string& str) {
   return str.compare(0, 3, "@<>");
-}
-
-const uniform_type_info* get_uti_by_type_name(const string& type_name) {
-  auto uti_map = detail::singletons::get_uniform_type_info_map();
-  auto res = uti_map->by_uniform_name(type_name);
-  if (!res) {
-    std::string err = "read type name \"";
-    err += type_name;
-    err += "\" but no such type is known";
-    throw std::runtime_error(err);
-  }
-  return res;
 }
 
 class dummy_backend : public actor_namespace::backend {
@@ -331,7 +343,7 @@ class string_serializer : public serializer, public dummy_backend {
     m_after_value = true;
   }
 };
-
+
 
 class string_deserializer : public deserializer, public dummy_backend {
  public:
