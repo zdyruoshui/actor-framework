@@ -46,6 +46,8 @@
 #include "caf/detail/uniform_type_info_map.hpp"
 
 using std::string;
+using std::cout;
+using std::endl;
 using std::ostream;
 using std::u16string;
 using std::u32string;
@@ -84,8 +86,9 @@ bool append_bool(message_builder& mb, const char* first, const char* last) {
 
 bool append_integer(message_builder& mb, const char* first, const char* last) {
   char* pos;
-  int result = strtol(first, &pos, 10);
+  int result = (int) strtol(first, &pos, 10);
   if (pos == last) {
+    DEBUG_DESERIALIZE("success i: " << result);
     mb.append(result);
     return true;
   }
@@ -94,9 +97,10 @@ bool append_integer(message_builder& mb, const char* first, const char* last) {
 
 bool append_float(message_builder& mb, const char* first, const char* last) {
   char* pos;
-  auto res = strtof(first, &pos);
+  auto result = strtof(first, &pos);
   if (pos == last) {
-    mb.append(res);
+    DEBUG_DESERIALIZE("success f: " << result);
+    mb.append(result);
     return true;
   }
   return false;
@@ -124,6 +128,7 @@ optional<message> parse_msg(const string& str) {
       string accu;
       bool end_found = false;
       while (!end_found) {
+        pos++;
         if (*pos == '\\') {
           switch (*(++pos))  {
             case '\\':
@@ -144,29 +149,30 @@ optional<message> parse_msg(const string& str) {
             case 'n':
               accu += '\n';
               break;
-            default:
-              // irgnore unknown escapes
           }
         } else if (*pos == needle) {
           end_found = true;
         } else {
           accu += *pos;
         }
-        pos++;
       }
       if (needle == '\'') {
+        // TODO: atom doesn't create successfully.
+        DEBUG_DESERIALIZE("atom: " << accu);
         auto atom = from_string<atom_value>(accu);
         if (!atom) {
           return none;
         }
         mb.append(atom);
       } else {
+        DEBUG_DESERIALIZE("string: " << accu);
         mb.append(accu);
       }
     } else {
       if (!append_bool(mb, pos, separator)
           || !append_float(mb, pos, separator)
           || !append_integer(mb, pos, separator)) {
+        DEBUG_DESERIALIZE("can't parse' " << string(pos, separator));
         return none;
       }
     }
@@ -181,7 +187,7 @@ optional<message> parse_msg(const string& str) {
 }
 
 bool with_signature(const string& str) {
-  return str.compare(0, 3, "@<>");
+  return str.compare(0, 3, "@<>") == 0;
 }
 
 class dummy_backend : public actor_namespace::backend {
@@ -343,7 +349,6 @@ class string_serializer : public serializer, public dummy_backend {
     m_after_value = true;
   }
 };
-
 
 class string_deserializer : public deserializer, public dummy_backend {
  public:
@@ -463,8 +468,9 @@ class string_deserializer : public deserializer, public dummy_backend {
       // and ':' must be ignored
       consume(':');
     }
+    auto str_end = m_str.end();
     string::iterator substr_end;
-    auto find_if_cond = [](char c)->bool {
+    auto find_if_pred = [](char c) -> bool {
       switch (c) {
         case ')':
         case '}':
@@ -476,70 +482,61 @@ class string_deserializer : public deserializer, public dummy_backend {
           return false;
       }
     };
+    char needle = (get<string>(&storage)) ? '"' : '\'';
     if (get<string>(&storage) || get<atom_value>(&storage)) {
-      char needle = (get<string>(&storage)) ? '"' : '\'';
-      if (*m_pos == needle) {
-        // skip leading "
-        ++m_pos;
-        char last_char = needle;
-        auto find_if_str_cond = [&last_char, needle ](char c)->bool {
-          if (c == needle && last_char != '\\') {
-            return true;
-          }
-          last_char = c;
-          return false;
-        };
-        substr_end = find_if(m_pos, m_str.end(), find_if_str_cond);
-      } else {
-        substr_end = find_if(m_pos, m_str.end(), find_if_cond);
+      if (*m_pos != needle) {
+        throw std::runtime_error("expected opening quotation mark");
+      }
+      auto pred = [needle](char prev, char curr) {
+        return prev != '\\' && curr == needle;
+      };
+      substr_end = std::adjacent_find(m_pos, str_end, pred);
+      if (substr_end != str_end) {
+        ++m_pos; // skip opening quote
+        ++substr_end; // set iterator to position of closing quote
       }
     } else {
-      substr_end = find_if(m_pos, m_str.end(), find_if_cond);
+      substr_end = find_if(m_pos, str_end, find_if_pred);
     }
-    if (substr_end == m_str.end()) {
+    if (substr_end == str_end) {
       throw std::runtime_error("malformed string (unterminated value)");
     }
     string substr(m_pos, substr_end);
     m_pos += static_cast<difference_type>(substr.size());
     if (get<string>(&storage) || get<atom_value>(&storage)) {
-      char needle = (get<string>(&storage)) ? '"' : '\'';
       // skip trailing "
-      if (*m_pos != needle) {
+      if (m_pos == str_end || *m_pos != needle) {
         string error_msg;
         error_msg = "malformed string, expected '";
         error_msg += needle;
         error_msg += "' found '";
-        error_msg += *m_pos;
+        if (m_pos == str_end) {
+          error_msg += "-end of string-";
+        } else {
+          error_msg += *m_pos;
+        }
         error_msg += "'";
         throw std::runtime_error(error_msg);
       }
       ++m_pos;
       // replace '\"' by '"'
-      char last_char = ' ';
-      auto cond = [&last_char, needle ](char c)->bool {
-        if (c == needle && last_char == '\\') {
-          return true;
-        }
-        last_char = c;
-        return false;
+      auto pred = [needle](char prev, char curr) {
+        return prev == '\\' && curr == needle;
       };
       string tmp;
-      auto sbegin = substr.begin();
-      auto send = substr.end();
-      for (auto i = find_if(sbegin, send, cond); i != send;
-           i = find_if(i, send, cond)) {
-        --i;
-        tmp.append(sbegin, i);
-        tmp += needle;
-        i += 2;
-        sbegin = i;
-      }
-      if (sbegin != substr.begin()) {
-        tmp.append(sbegin, send);
-      }
-      if (!tmp.empty()) {
-        substr = std::move(tmp);
-      }
+      auto prev = substr.begin();
+      auto last = substr.end();
+      do {
+        auto i = std::adjacent_find(prev, last, pred);
+        tmp.append(prev, i);
+        if (i == last) {
+          prev = last;
+        } else {
+          tmp += needle;
+          prev = i + 2;
+        }
+      } while (prev != last);
+      substr.swap(tmp);
     }
     from_string_reader fsr(substr);
     apply_visitor(fsr, storage);
@@ -761,7 +758,7 @@ uniform_value from_string_impl(const string& what) {
 optional<message> message_from_string(const std::string& what) {
   if (with_signature(what)) {
     auto uv = from_string_impl(what);
-    if (uv && (*uv->ti) == typeid(message)) {
+    if (uv) {
       return std::move(*reinterpret_cast<message*>(uv->val));
     }
     return none;
