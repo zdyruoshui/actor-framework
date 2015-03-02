@@ -1,11 +1,12 @@
-#include <mutex>
+
 #include <atomic>
-#include <thread>
-#include <condition_variable>
 
 #include "test.hpp"
 #include "caf/all.hpp"
+#include "caf/mutex.hpp"
+#include "caf/thread.hpp"
 #include "caf/string_algorithms.hpp"
+#include "caf/condition_variable.hpp"
 
 using namespace std;
 using namespace caf;
@@ -13,20 +14,20 @@ using namespace caf;
 namespace {
 
 atomic<size_t> s_error_count{0};
-std::mutex s_stdout_mtx;
+mutex s_stdout_mtx;
 
 class watchdog {
  public:
   watchdog() {
     m_thread = thread([&] {
-      auto tp = chrono::high_resolution_clock::now() + chrono::seconds(10);
-      unique_lock<mutex> guard{m_mtx};
+      auto tp = now() + chrono::seconds(10);
+      caf::unique_lock<mutex> guard{m_mtx};
       while (!m_canceled
              && m_cv.wait_until(guard, tp) != cv_status::timeout) {
         // spin
       }
       if (!m_canceled) {
-        std::lock_guard<std::mutex> io_guard{s_stdout_mtx};
+        caf::lock_guard<mutex> io_guard{s_stdout_mtx};
         cerr << "WATCHDOG: unit test did finish within 10s, abort" << endl;
         abort();
       }
@@ -34,7 +35,7 @@ class watchdog {
   }
   ~watchdog() {
     { // lifetime scope of guard
-      std::lock_guard<std::mutex> guard{m_mtx};
+      caf::lock_guard<mutex> guard{m_mtx};
       m_canceled = true;
       m_cv.notify_all();
     }
@@ -42,16 +43,16 @@ class watchdog {
   }
 
   volatile bool m_canceled = false;
-  std::mutex m_mtx;
-  std::condition_variable m_cv;
-  std::thread m_thread;
+  mutex m_mtx;
+  condition_variable m_cv;
+  thread m_thread;
 };
 
 watchdog* s_watchdog;
 
 } // namespace <anonymous>
 
-std::mutex& caf_stdout_mtx() {
+mutex& caf_stdout_mtx() {
   return s_stdout_mtx;
 }
 
@@ -126,7 +127,7 @@ void set_default_test_settings() {
   cout.unsetf(ios_base::unitbuf);
 }
 
-std::thread run_program_impl(actor rc, const char* cpath, vector<string> args) {
+thread run_program_impl(actor rc, const char* cpath, vector<string> args) {
   string path = cpath;
   replace_all(path, "'", "\\'");
   ostringstream oss;
@@ -136,7 +137,7 @@ std::thread run_program_impl(actor rc, const char* cpath, vector<string> args) {
   }
   oss << " 2>&1";
   string cmdstr = oss.str();
-  return std::thread([cmdstr, rc] {
+  return thread([cmdstr, rc] {
     string output;
     auto fp = popen(cmdstr.c_str(), "r");
     if (!fp) {

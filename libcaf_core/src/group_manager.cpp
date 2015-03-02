@@ -56,14 +56,14 @@ class latch {
   }
 
   void wait() {
-    std::unique_lock<std::mutex> guard{m_mtx};
+    unique_lock<mutex> guard{m_mtx};
     while (m_value != 0) {
       m_cv.wait(guard);
     }
   }
 
   void count_down() {
-    std::unique_lock<std::mutex> guard;
+    unique_lock<mutex> guard;
     --m_value;
     m_cv.notify_one();
   }
@@ -74,8 +74,8 @@ class latch {
 
  private:
   volatile int m_value;
-  std::mutex m_mtx;
-  std::condition_variable m_cv;
+  mutex m_mtx;
+  condition_variable m_cv;
 };
 
 class local_group : public abstract_group {
@@ -428,7 +428,7 @@ void group_manager::stop() {
   CAF_LOG_TRACE("");
   modules_map mm;
   { // critical section
-    std::lock_guard<std::mutex> guard(m_mmap_mtx);
+    lock_guard<mutex> guard(m_mmap_mtx);
     mm.swap(m_mmap);
   }
   for (auto& kvp : mm) {

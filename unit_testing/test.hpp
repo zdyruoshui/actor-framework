@@ -1,10 +1,8 @@
 #ifndef TEST_HPP
 #define TEST_HPP
 
-#include <mutex>
 #include <vector>
 #include <string>
-#include <thread>
 #include <cstring>
 #include <cstddef>
 #include <sstream>
@@ -13,6 +11,8 @@
 
 #include "caf/all.hpp"
 #include "caf/actor.hpp"
+#include "caf/mutex.hpp"
+#include "caf/thread.hpp"
 #include "caf/config.hpp"
 #include "caf/shutdown.hpp"
 #include "caf/to_string.hpp"
@@ -28,7 +28,7 @@ constexpr char to_dev_null[] = "";
 
 void set_default_test_settings();
 
-std::mutex& caf_stdout_mtx();
+caf::mutex& caf_stdout_mtx();
 size_t caf_error_count();
 void caf_inc_error_count();
 std::string caf_fill4(size_t value);
@@ -41,7 +41,7 @@ void caf_unexpected_timeout(const char* file, size_t line);
 
 #define CAF_PRINTC(filename, line, message)                                    \
   {                                                                            \
-    std::lock_guard<std::mutex> guard{caf_stdout_mtx()};                       \
+    caf::lock_guard<caf::mutex> guard{caf_stdout_mtx()};                       \
     std::cout << CAF_STREAMIFY(filename, line, message) << std::endl;          \
   }                                                                            \
   static_cast<void>(0)
@@ -50,7 +50,7 @@ void caf_unexpected_timeout(const char* file, size_t line);
 
 #define CAF_PRINTERRC(fname, line, msg)                                        \
   {                                                                            \
-    std::lock_guard<std::mutex> guard{caf_stdout_mtx()};                       \
+    caf::lock_guard<caf::mutex> guard{caf_stdout_mtx()};                       \
     std::cerr << "ERROR: " << CAF_STREAMIFY(fname, line, msg) << std::endl;    \
   }                                                                            \
   caf_inc_error_count();
@@ -209,7 +209,7 @@ caf::optional<T> spro(const std::string& str) {
   return caf::none;
 }
 
-std::thread run_program_impl(caf::actor, const char*, std::vector<std::string>);
+caf::thread run_program_impl(caf::actor, const char*, std::vector<std::string>);
 
 template <class T>
 typename std::enable_if<
@@ -225,7 +225,7 @@ inline std::string convert_to_str(std::string value) {
 }
 
 template <class... Ts>
-std::thread run_program(caf::actor listener, const char* path, Ts&&... args) {
+caf::thread run_program(caf::actor listener, const char* path, Ts&&... args) {
   std::vector<std::string> vec{convert_to_str(std::forward<Ts>(args))...};
   return run_program_impl(listener, path, std::move(vec));
 }
