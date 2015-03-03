@@ -54,7 +54,7 @@ namespace caf {
 namespace {
 
 bool isbuiltin(const string& type_name) {
-  return type_name == "@str" || type_name == "@atom" || type_name == "@tuple";
+  return type_name == "@str" || type_name == "@atom";
 }
 
 class dummy_backend : public actor_namespace::backend {
@@ -144,20 +144,23 @@ class string_serializer : public serializer, public dummy_backend {
   }
 
   void begin_object(const uniform_type_info* uti) {
-    clear();
-    string tname = uti->name();
-    m_open_objects.push(tname);
-    // do not print type names for strings and atoms
-    if (!isbuiltin(tname) && tname != "@message") {
-      // suppress output of "@message ( ... )" because it's redundant
+    if (strcmp(uti->name(), "@message") == 0) {
+      // ignore first `begin_object` call of `message` because it's redundant
       // since each message immediately calls begin_object(...)
       // for the typed tuple it's containing
+      return;
+    }
+    if (m_obj_just_opened) {
+      out << " (";
+    } else {
+      clear();
+    }
+    string tname = uti->name();
+    m_open_objects.push(tname);
+    // print only the first type name
+    m_obj_just_opened = true;
+    if (m_open_objects.size() == 1) {
       out << tname;
-      m_obj_just_opened = true;
-    } else if (tname.compare(0, 3, "@<>") == 0) {
-      std::vector<string> subtypes;
-      split(subtypes, tname, is_any_of("+"), token_compress_on);
-      m_obj_just_opened = true;
     }
   }
 
@@ -169,7 +172,7 @@ class string_serializer : public serializer, public dummy_backend {
     m_after_value = true;
     if (!m_open_objects.empty()) {
       auto& open_obj = m_open_objects.top();
-      if (!isbuiltin(open_obj) && open_obj != "@message") {
+      if (!isbuiltin(open_obj)) {
         out << (m_after_value ? " )" : ")");
       }
       m_open_objects.pop();
@@ -252,6 +255,13 @@ class string_deserializer : public deserializer, public dummy_backend {
       throw std::runtime_error(err);
     }
     return res;
+  }
+
+  bool begin_object(const uniform_type_info* expected) override {
+    skip_space_and_comma();
+    m_open_objects.push(expected->name());
+    m_obj_had_left_parenthesis.push(try_consume('('));
+    return true;
   }
 
   void end_object() override {

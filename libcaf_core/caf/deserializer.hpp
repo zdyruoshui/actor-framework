@@ -36,20 +36,26 @@ class uniform_type_info;
  * Technology-independent deserialization interface.
  */
 class deserializer {
-
+ public:
   deserializer(const deserializer&) = delete;
   deserializer& operator=(const deserializer&) = delete;
-
- public:
 
   deserializer(actor_namespace* ns = nullptr);
 
   virtual ~deserializer();
 
+  using rtti = const uniform_type_info*;
+
   /**
-   * Begins deserialization of a new object.
+   * Begins deserialization of a new object of unknown type.
    */
-  virtual const uniform_type_info* begin_object() = 0;
+  virtual rtti begin_object() = 0;
+
+  /**
+   * Begins deserialization of a new object of an expected type.
+   * @returns `true` if the detected type matches `expected`, `false` otherwise.
+   */
+  virtual bool begin_object(rtti expected) = 0;
 
   /**
    * Ends deserialization of an object.

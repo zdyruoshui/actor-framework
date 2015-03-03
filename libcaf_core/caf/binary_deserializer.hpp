@@ -28,22 +28,22 @@ namespace caf {
  * Implements the deserializer interface with a binary serialization protocol.
  */
 class binary_deserializer : public deserializer {
-
-  using super = deserializer;
-
  public:
-
   binary_deserializer(const void* buf, size_t buf_size,
-            actor_namespace* ns = nullptr);
-
-  binary_deserializer(const void* begin, const void* m_end,
-            actor_namespace* ns = nullptr);
+                      actor_namespace* ns = nullptr);
 
   const uniform_type_info* begin_object() override;
+
+  bool begin_object(const uniform_type_info*) override;
+
   void end_object() override;
+
   size_t begin_sequence() override;
+
   void end_sequence() override;
+
   void read_value(primitive_variant& storage) override;
+
   void read_raw(size_t num_bytes, void* storage) override;
 
   /**
@@ -57,14 +57,12 @@ class binary_deserializer : public deserializer {
   void set_rdbuf(const void* begin, const void* m_end);
 
  private:
-
   const void* m_pos;
   const void* m_end;
-
 };
 
 template <class T>
-inline binary_deserializer& operator>>(binary_deserializer& lhs, T& rhs) {
+binary_deserializer& operator>>(binary_deserializer& lhs, T& rhs) {
   rhs = lhs.read<T>();
   return lhs;
 }

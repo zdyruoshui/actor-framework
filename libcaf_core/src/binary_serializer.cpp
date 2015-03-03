@@ -95,11 +95,15 @@ class binary_writer : public static_visitor<> {
 };
 
 void binary_serializer::begin_object(const uniform_type_info* uti) {
-  binary_writer::write_string(m_out, uti->name());
+  if (++m_open_objects == 1) {
+    // only write type name of first object
+    binary_writer::write_string(m_out, uti->name());
+  }
 }
 
 void binary_serializer::end_object() {
-  // nop
+  --m_open_objects;
+  CAF_REQUIRE(m_open_objects >= 0);
 }
 
 void binary_serializer::begin_sequence(size_t list_size) {

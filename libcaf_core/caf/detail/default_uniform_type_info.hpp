@@ -163,7 +163,10 @@ class default_serialize_policy {
 
   template <class T>
   void simpl(const T& val, serializer* s, recursive_impl) const {
+    auto rtti = uniform_typeid<T>();
+    s->begin_object(rtti);
     uniform_typeid<T>()->serialize(&val, s);
+    s->end_object();
   }
 
   template <class T>
@@ -216,7 +219,12 @@ class default_serialize_policy {
 
   template <class T>
   void dimpl(T& storage, deserializer* d, recursive_impl) const {
-    uniform_typeid<T>()->deserialize(&storage, d);
+    auto rtti = uniform_typeid<T>();
+    if (!d->begin_object(rtti)) {
+      throw std::runtime_error("source reported unexpected type");
+    }
+    rtti->deserialize(&storage, d);
+    d->end_object();
   }
 };
 

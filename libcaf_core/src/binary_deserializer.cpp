@@ -145,15 +145,19 @@ struct pt_reader : static_visitor<> {
 
 binary_deserializer::binary_deserializer(const void* buf, size_t buf_size,
                                          actor_namespace* ns)
-    : super(ns), m_pos(buf), m_end(advanced(buf, buf_size)) {
+    : deserializer(ns),
+      m_pos(buf),
+      m_end(advanced(buf, buf_size)) {
   // nop
 }
 
+/*
 binary_deserializer::binary_deserializer(const void* bbegin, const void* bend,
                                          actor_namespace* ns)
     : super(ns), m_pos(bbegin), m_end(bend) {
   // nop
 }
+*/
 
 const uniform_type_info* binary_deserializer::begin_object() {
   std::string tname;
@@ -167,6 +171,12 @@ const uniform_type_info* binary_deserializer::begin_object() {
     throw std::runtime_error(err);
   }
   return uti;
+}
+
+bool binary_deserializer::begin_object(const uniform_type_info*) {
+  // no validation: binary_serializer does not
+  // put type information between values
+  return true;
 }
 
 void binary_deserializer::end_object() {

@@ -55,11 +55,19 @@ struct struct_a {
   int y;
 };
 
+inline bool operator==(const struct_a& lhs, const struct_a& rhs) {
+  return lhs.x == rhs.x && lhs.y == rhs.y;
+}
+
 struct struct_b {
   struct_a a;
   int z;
   list<int> ints;
 };
+
+inline bool operator==(const struct_b& lhs, const struct_b& rhs) {
+  return lhs.a == rhs.a && lhs.z == rhs.z && lhs.ints == rhs.ints;
+}
 
 using strmap = map<string, u16string>;
 
@@ -129,12 +137,23 @@ void test_string_serialization() {
   }
   CAF_CHECK(*m == input);
   CAF_CHECK_EQUAL(to_string(*m), to_string(input));
+  input = make_message(struct_b{{1, 2}, 3, {4, 5, 6}});
+  s = to_string(input);
+cout << "s = " << s << endl;
+  m = from_string<message>(s);
+  CAF_CHECK(m && *m == input);
+}
+
+void test_binary_serialization() {
 }
 
 int main() {
   CAF_TEST(test_serialization);
-
+  announce<list<int>>("list<int>");
   announce<test_enum>("test_enum");
+  announce<struct_a>("struct_a", &struct_a::x, &struct_a::y);
+  announce<struct_b>("struct_b", &struct_b::a, &struct_b::z, &struct_b::ints);
+  announce(typeid(raw_struct), uniform_type_info_ptr{new raw_struct_type_info});
 
   test_ieee_754();
 
@@ -146,8 +165,6 @@ int main() {
   CAF_CHECK_EQUAL(detail::impl_id<strmap>(), 2);
   CAF_CHECK_EQUAL(token::value, 2);
 
-  announce(typeid(raw_struct), uniform_type_info_ptr{new raw_struct_type_info});
-
   auto nid = detail::singletons::get_node_id();
   auto nid_str = to_string(nid);
   CAF_PRINT("nid_str = " << nid_str);
@@ -158,6 +175,7 @@ int main() {
   }
 
   test_string_serialization();
+  test_binary_serialization();
 
   /*
     auto oarr = new detail::object_array;
