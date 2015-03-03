@@ -1,7 +1,5 @@
 #include "test.hpp"
 
-#include <iostream>
-
 #include "caf/all.hpp"
 
 using namespace std;
@@ -10,65 +8,130 @@ using namespace caf;
 int main() {
   CAF_TEST(test_from_string);
   {
-    auto val = from_string<message>("@<>+@i32 ( 42 )");
-    CAF_CHECK(val == make_message(42));
-    CAF_CHECK(val && val == from_string<message>(to_string(*val)));
+    string str = "@<>+@i32 ( 42 )";
+    auto val = from_string<message>(str);
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none'");
+    } else {
+      CAF_CHECK(val == make_message(42));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK_EQUAL(to_string(*val), str);
+    }
   }
   {
-    string str = "atom";
-    auto val = from_string<message>("@<>+@atom ( '" + str + "' )");
-    CAF_CHECK(val == make_message(atom("atom")));
-    CAF_CHECK(val && val == from_string<message>(to_string(*val)));
+    string str = "@<>+@atom ( 'atom' )";
+    auto val = from_string<message>(str);
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none' for atom value");
+    } else {
+      CAF_CHECK(val == make_message(atom("atom")));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK_EQUAL(to_string(*val), str);
+    }
   }
   {
-    auto true_val = from_string<message>("@<>+bool ( true )");
-    auto false_val = from_string<message>("@<>+bool ( false )");
-    cout << "expect @<>+@bool (true): " << to_string(*true_val) << endl;
-    cout << "expect @<>+@bool (false): " << to_string(*false_val) << endl;
-    CAF_CHECK(true_val   == make_message(true));
-    CAF_CHECK(false_val  == make_message(false));
-    CAF_CHECK(true_val && true_val ==
-              from_string<message>(to_string(*true_val)));
-    CAF_CHECK(false_val && false_val ==
-              from_string<message>(to_string(*false_val)));
+    auto true_str = "@<>+bool ( true )";
+    auto false_str = "@<>+bool ( false )";
+    auto true_val = from_string<message>(true_str);
+    auto false_val = from_string<message>(false_str);
+    if (!true_val) {
+      CAF_PRINTERR("from_string returned 'none' for true_val");
+    } else {
+      CAF_CHECK(true_val == make_message(true));
+      CAF_CHECK(true_val == from_string<message>(to_string(*true_val)));
+      CAF_CHECK_EQUAL(to_string(*true_val), true_str);
+    }
+    if (!false_val) {
+      CAF_PRINTERR("from_string returned 'none' for false_val");
+    } else {
+      CAF_CHECK(false_val == make_message(false));
+      CAF_CHECK(false_val == from_string<message>(to_string(*false_val)));
+      CAF_CHECK_EQUAL(to_string(*false_val), false_str);
+
+    }
   }
   {
     uint32_t a = 5;
     uint64_t b = 9;
-    auto val = from_string<message>("@<>+@u32+@u64 (5, 9)");
-    CAF_CHECK(val.valid());
-    CAF_CHECK(val == make_message(a, b));
+    auto str = "@<>+@u32+@u64 ( 5, 9 )";
+    auto val = from_string<message>(str);
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none' for mixed case");
+    } else {
+      CAF_CHECK(val == make_message(a, b));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK_EQUAL(to_string(*val), str);
+    }
   }
   {
-    auto val = from_string<message>("@<>+@atom+@i32+@i32 ( 'add' 5 10 )");
-    CAF_CHECK(val.valid());
-    CAF_CHECK(val == make_message(atom("add"), 5, 10));
+    auto str = "@<>+@atom+@i32+@i32 ( 'add', 5, 10 )";
+    auto val = from_string<message>(str);
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none'");
+    } else {
+      CAF_CHECK(val == make_message(atom("add"), 5, 10));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK_EQUAL(to_string(*val), str);
+    }
   }
   {
     auto val = from_string<message>("42");
-    CAF_CHECK(val.valid());
-    CAF_CHECK(val == make_message(42));
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none'");
+    } else {
+      CAF_CHECK(val == make_message(42));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK_EQUAL(to_string(*val), "@<>+@i32 ( 42 )");
+    }
   }
   {
     auto val = from_string<message>("'atom' 'atom'");
-    CAF_CHECK(val.valid());
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none'");
+    }
     CAF_CHECK(val == make_message(atom("atom"), atom("atom")));
+    CAF_CHECK(val == from_string<message>(to_string(*val)));
+    CAF_CHECK_EQUAL(to_string(*val), "@<>+@atom+@atom ( 'atom', 'atom' )");
   }
   {
     auto val = from_string<message>("\"string\"");
-    CAF_CHECK(val.valid());
-    CAF_CHECK(val && val == make_message("string"));
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none' for boolean");
+    } else {
+      CAF_CHECK(val == make_message("string"));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK_EQUAL(to_string(*val), "@<>+@str ( \"string\" )");
+    }
   }
   {
     auto val = from_string<message>("true");
-    CAF_CHECK(val.valid());
-    CAF_CHECK(val == make_message(true)); 
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none' for boolean");
+    } else {
+      CAF_CHECK(val == make_message(true));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK(to_string(*val) == "@<>+bool ( true )");
+    }
   }
   {
     auto val = from_string<message>("'add' 5 10");
-    CAF_CHECK(val.valid());
-    CAF_CHECK(val == make_message(atom("add"), 5, 10));
-    CAF_CHECK(val && val == from_string<message>(to_string(*val)));
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none' for mixed values");
+    } else {
+      CAF_CHECK(val == make_message(atom("add"), 5, 10));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+      CAF_CHECK_EQUAL(to_string(*val), "@<>+@atom+@i32+@i32 ( 'add', 5, 10 )");
+    }
+  }
+  {
+    auto val = from_string<message>("3.131f");
+    if (!val) {
+      CAF_PRINTERR("from_string returned 'none' for float value");
+    } else {
+      CAF_CHECK(val == make_message(3.131f));
+      CAF_CHECK(val == from_string<message>(to_string(*val)));
+    }
   }
   return CAF_TEST_RESULT();
 }
+

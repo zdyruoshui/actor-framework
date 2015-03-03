@@ -54,8 +54,8 @@ using std::u32string;
 using std::istringstream;
 using const_citer = string::const_iterator;
 
-#define DEBUG_DESERIALIZE(line) \
-  std::cout << line << std::endl;
+#define DEBUG_DESERIALIZE(line);
+  //std::cout << line << std::endl;
 
 namespace caf {
 
@@ -65,7 +65,7 @@ namespace {
  * @brief Store type and value for from_string without signatur.
  */
 struct element {
-  std::string type; // or store uniform_type_info?
+  std::string type;
   std::string value;
 };
 
@@ -74,21 +74,21 @@ bool isbuiltin(const string& type_name) {
 }
 
 bool append_bool(message_builder& mb, const char* first, const char* last) {
-  // TODO: work around for creating a new string
   string word(first, last);
   if (word == "true") {
     mb.append(true);
-  } else if (word == "false"){
+    return true;
+  } else if (word == "false") {
     mb.append(false);
+    return true;
   }
   return false;
 }
 
 bool append_integer(message_builder& mb, const char* first, const char* last) {
   char* pos;
-  int result = (int) strtol(first, &pos, 10);
+  int result = static_cast<int>(strtol(first, &pos, 10));
   if (pos == last) {
-    DEBUG_DESERIALIZE("success i: " << result);
     mb.append(result);
     return true;
   }
@@ -97,10 +97,13 @@ bool append_integer(message_builder& mb, const char* first, const char* last) {
 
 bool append_float(message_builder& mb, const char* first, const char* last) {
   char* pos;
-  auto result = strtof(first, &pos);
+  auto result = strtod(first, &pos);
   if (pos == last) {
-    DEBUG_DESERIALIZE("success f: " << result);
     mb.append(result);
+    return true;
+  }
+  if (*pos == 'f' && (pos + 1) == last) {
+    mb.append(static_cast<float>(result));
     return true;
   }
   return false;
@@ -157,22 +160,21 @@ optional<message> parse_msg(const string& str) {
         }
       }
       if (needle == '\'') {
-        // TODO: atom doesn't create successfully.
-        DEBUG_DESERIALIZE("atom: " << accu);
-        auto atom = from_string<atom_value>(accu);
-        if (!atom) {
+        try {
+          auto atom = static_cast<atom_value>(
+                       detail::atom_val(accu.c_str(), 0xF));
+          mb.append(atom);
+        } catch (...) {
           return none;
         }
-        mb.append(atom);
       } else {
-        DEBUG_DESERIALIZE("string: " << accu);
         mb.append(accu);
       }
     } else {
       if (!append_bool(mb, pos, separator)
-          || !append_float(mb, pos, separator)
-          || !append_integer(mb, pos, separator)) {
-        DEBUG_DESERIALIZE("can't parse' " << string(pos, separator));
+          && !append_integer(mb, pos, separator)
+          && !append_float(mb, pos, separator)) {
+        DEBUG_DESERIALIZE("Didn't add " << string(pos, separator));
         return none;
       }
     }
